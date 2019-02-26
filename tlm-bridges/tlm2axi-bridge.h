@@ -29,15 +29,19 @@
 #define SC_INCLUDE_DYNAMIC_PROCESSES
 
 #include <vector>
+#include <list>
 #include <sstream>
 
 #include "tlm-bridges/amba.h"
 #include "tlm-modules/tlm-aligner.h"
 #include "tlm-extensions/genattr.h"
+#include "tlm-bridges/ace-snoop-ch.h"
 
 #define TLM2AXI_BRIDGE_MSG "tlm2axi-bridge"
 
 #define D(x)
+
+using namespace AMBA::ACE;
 
 template
 <int ADDR_WIDTH,
@@ -49,13 +53,21 @@ template
 	int ARUSER_WIDTH = 2,
 	int WUSER_WIDTH = 2,
 	int RUSER_WIDTH = 2,
-	int BUSER_WIDTH = 2>
+	int BUSER_WIDTH = 2,
+	int ACE_MODE = ACE_MODE_OFF,
+	int CACHELINE_SZ = 64,
+	int CD_DATA_WIDTH = DATA_WIDTH>
 class tlm2axi_bridge
 : public sc_core::sc_module,
 	public tlm_aligner::IValidator,
 	public axi_common
 {
 public:
+	typedef ACESnoopChannels_M<
+				ADDR_WIDTH,
+				CD_DATA_WIDTH,
+				CACHELINE_SZ> ACESnoopChannels_M__;
+
 	tlm_utils::simple_target_socket<tlm2axi_bridge> tgt_socket;
 
 	tlm2axi_bridge(sc_core::sc_module_name name,
@@ -117,6 +129,20 @@ public:
 		rid("rid"),
 		rlast("rlast"),
 
+		// AXI4 ACE signals
+		awsnoop("awsnoop"),
+		awdomain("awdomain"),
+		awbar("awbar"),
+		wack("wack"),
+
+		arsnoop("arsnoop"),
+		ardomain("ardomain"),
+		arbar("arbar"),
+
+		rack("rack"),
+
+		ace(NULL),
+
 		m_version(version),
 		m_maxBurstLength(AXI4_MAX_BURSTLENGTH),
 		aligner(NULL),
@@ -124,6 +150,10 @@ public:
 		proxy_target_socket(NULL),
 		dummy("axi-dummy")
 	{
+		if (ACE_MODE == ACE_MODE_ACE) {
+			ace = new ACESnoopChannels_M__("ace", clk, resetn);
+		}
+
 		if (m_version == V_AXI3) {
 			m_maxBurstLength = AXI3_MAX_BURSTLENGTH;
 		}
@@ -160,6 +190,7 @@ public:
 		delete proxy_init_socket;
 		delete proxy_target_socket;
 		delete aligner;
+		delete ace;
 	}
 
 	SC_HAS_PROCESS(tlm2axi_bridge);
@@ -217,13 +248,29 @@ public:
 	sc_in<bool > rvalid;
 	sc_out<bool > rready;
 	sc_in<sc_bv<DATA_WIDTH> > rdata;
-	sc_in<sc_bv<2> > rresp;
+	sc_in<sc_bv<(ACE_MODE == ACE_MODE_ACE) ? 4 : 2> > rresp;
 	sc_in<AXISignal(RUSER_WIDTH) > ruser;		// AXI4 only
 	sc_in<AXISignal(ID_WIDTH) > rid;
 	sc_in<bool > rlast;
 
+	// AXI4 ACE signals
+	sc_out<sc_bv<3> > awsnoop;
+	sc_out<sc_bv<2> > awdomain;
+	sc_out<sc_bv<2> > awbar;
+
+	sc_out<bool > wack;
+
+	sc_out<sc_bv<4> > arsnoop;
+	sc_out<sc_bv<2> > ardomain;
+	sc_out<sc_bv<2> > arbar;
+
+	sc_out<bool > rack;
+
+	ACESnoopChannels_M__ *ace;
+
 private:
-	class Transaction
+	class Transaction :
+		public ace_tx_helpers
 	{
 	public:
 		Transaction(tlm::tlm_generic_payload& gp) :
@@ -241,6 +288,10 @@ private:
 
 			SetupBurstType();
 			SetupNumBeats();
+
+			if (ACE_MODE) {
+				setup_ace_helpers(&m_gp);
+			}
 		}
 
 		void SetupBurstType()
@@ -399,6 +450,17 @@ private:
 		}
 
 		sc_event& DoneEvent() { return m_done; }
+
+		bool hasData()
+		{
+			if (ACE_MODE) {
+				if (IsBarrier() || IsEvict()) {
+					return false;
+				}
+			}
+			return true;
+		}
+
 	private:
 		tlm::tlm_generic_payload& m_gp;
 		genattr_extension m_genattr;
@@ -580,6 +642,35 @@ private:
 		arqos.write(rt->GetAxQoS());
 		arregion.write(rt->GetAxRegion());
 
+		if (ACE_MODE) {
+			arsnoop.write(rt->GetAxSnoop());
+			ardomain.write(rt->GetAxDomain());
+			arbar.write(rt->GetAxBar());
+
+			//
+			// Barrier transactions must have axlen == 0
+			// (Section 3.1.5 [1]). Also DVM transactions (Section
+			// C12.6 [1]).
+			//
+			if (rt->GetAxBar() || rt->IsDVM()) {
+				arlen.write(0);
+			}
+
+			if (ACE_MODE == ACE_MODE_ACE) {
+				//
+				// Wait until the DVM Sync response has been
+				// sent before transmitting DVMComplete
+				//
+				if (rt->IsDVMComplete() &&
+					ace->GetNumDVMSyncResp() == 0) {
+
+					wait(ace->DVMSyncRespEvent() |
+						resetn.negedge_event());
+				}
+				ace->DecNumDVMSyncResp();
+			}
+		}
+
 		arvalid.write(true);
 
 		// Wait for arready but exit if reset is asserted
@@ -608,6 +699,18 @@ private:
 		awcache.write(wt->GetAxCache());
 		awqos.write(wt->GetAxQoS());
 		awregion.write(wt->GetAxRegion());
+
+		if (ACE_MODE) {
+			awsnoop.write(wt->GetAxSnoop());
+			awdomain.write(wt->GetAxDomain());
+			awbar.write(wt->GetAxBar());
+
+			// Barrier transactions must have axlen == 0
+			// (Section 3.1.5 [1])
+			if (wt->GetAxBar()) {
+				awlen.write(0);
+			}
+		}
 
 		awvalid.write(true);
 
@@ -720,6 +823,18 @@ private:
 						be = trans->get_byte_enable_ptr();
 						be_len = trans->get_byte_enable_length();
 						streaming_width = trans->get_streaming_width();
+
+					}
+
+					//
+					// ACE Clean and Make transactions have
+					// a single data transfer and data must
+					// be ignored.
+					//
+					// Section C3.2.1 [1]
+					//
+					if (ACE_MODE && tr->HasSingleDataTransfer()) {
+						break;
 					}
 
 					addr = trans->get_address() + (pos % streaming_width);
@@ -771,7 +886,9 @@ private:
 			// Translate the response and notify if not in reset.
 			//
 			if (resetn.read() == true) {
-				switch (rresp.read().to_uint64()) {
+				uint64_t resp = rresp.read().to_uint64();
+
+				switch (resp & 0x3) {
 				case AXI_EXOKAY:
 					assert(tr->IsExclusive());
 					tr->SetExclusiveHandled();
@@ -787,6 +904,27 @@ private:
 					D(printf("SLVERR\n"));
 					trans->set_response_status(tlm::TLM_GENERIC_ERROR_RESPONSE);
 					break;
+				}
+
+				if (ACE_MODE == ACE_MODE_ACE) {
+					if (ace->ExtractIsShared(resp)) {
+						tr->SetShared();
+					}
+					if (ace->ExtractPassDirty(resp)) {
+						tr->SetDirty();
+					}
+
+					// Signal rack
+					rack.write(true);
+					wait(clk.posedge_event() | resetn.negedge_event());
+					rack.write(false);
+
+					// Reset asserted while rack is being signaled
+					if (reset_asserted()) {
+						abort(tr);
+						wait_for_reset_release();
+						continue;
+					}
 				}
 
 				tr->DoneEvent().notify();
@@ -813,9 +951,10 @@ private:
 			unsigned int pos = 0;
 
 			//
-			// Start the data transfer if not in reset.
+			// Start the data transfer if not in reset. ACE write
+			// barriers and Evict do not have data transfer.
 			//
-			if (resetn.read() == true) {
+			if (!reset_asserted() && tr->hasData()) {
 				while (pos < len) {
 					pos += prepare_wbeat(tr, pos);
 
@@ -901,6 +1040,21 @@ private:
 				break;
 			}
 
+			if (ACE_MODE == ACE_MODE_ACE) {
+				wack.write(true);
+
+				// Wait 1 clk cycle (or for reset)
+				wait(clk.posedge_event() | resetn.negedge_event());
+
+				wack.write(false);
+
+				if (reset_asserted()) {
+					abort(tr);
+					wait_for_reset_release();
+					continue;
+				}
+			}
+
 			tr->DoneEvent().notify();
 		}
 	}
@@ -930,6 +1084,11 @@ private:
 				abort(wrResponses[i]);
 			}
 			wrResponses.clear();
+
+			if (ACE_MODE == ACE_MODE_ACE) {
+				rack.write(false);
+				wack.write(false);
+			}
 		}
 	}
 
@@ -950,6 +1109,16 @@ private:
 		sc_signal<AXISignal(ARUSER_WIDTH) > aruser;
 		sc_signal<AXISignal(RUSER_WIDTH) > ruser;
 
+		// AXI4 ACE signals
+		sc_signal<sc_bv<3> > awsnoop;
+		sc_signal<sc_bv<2> > awdomain;
+		sc_signal<sc_bv<2> > awbar;
+		sc_signal<bool > wack;
+		sc_signal<sc_bv<4> > arsnoop;
+		sc_signal<sc_bv<2> > ardomain;
+		sc_signal<sc_bv<2> > arbar;
+		sc_signal<bool > rack;
+
 		axi_dummy(sc_module_name name) :
 			wid("wid"),
 			awqos("awqos"),
@@ -960,7 +1129,17 @@ private:
 			arregion("arregion"),
 			arqos("arqos"),
 			aruser("aruser"),
-			ruser("ruser")
+			ruser("ruser"),
+
+			// AXI4 ACE signals
+			awsnoop("awsnoop"),
+			awdomain("awdomain"),
+			awbar("awbar"),
+			wack("wack"),
+			arsnoop("arsnoop"),
+			ardomain("ardomain"),
+			arbar("arbar"),
+			rack("rack")
 		{ }
 	};
 
@@ -987,6 +1166,20 @@ private:
 			if (RUSER_WIDTH == 0) {
 				ruser(dummy.ruser);
 			}
+
+			if (ACE_MODE == ACE_MODE_OFF) {
+				awsnoop(dummy.awsnoop);
+				awdomain(dummy.awdomain);
+				awbar(dummy.awbar);
+				wack(dummy.wack);
+				arsnoop(dummy.arsnoop);
+				ardomain(dummy.ardomain);
+				arbar(dummy.arbar);
+				rack(dummy.rack);
+			} else if (ACE_MODE == ACE_MODE_ACELITE) {
+				rack(dummy.rack);
+				wack(dummy.wack);
+			}
 		} else if (m_version == V_AXI3) {
 			awqos(dummy.awqos);
 			awregion(dummy.awregion);
@@ -997,6 +1190,16 @@ private:
 			arqos(dummy.arqos);
 			aruser(dummy.aruser);
 			ruser(dummy.ruser);
+
+			// AXI4 ACE signals
+			awsnoop(dummy.awsnoop);
+			awdomain(dummy.awdomain);
+			awbar(dummy.awbar);
+			wack(dummy.wack);
+			arsnoop(dummy.arsnoop);
+			ardomain(dummy.ardomain);
+			arbar(dummy.arbar);
+			rack(dummy.rack);
 		}
 	}
 
@@ -1026,7 +1229,8 @@ private:
 template
 <int ADDR_WIDTH, int DATA_WIDTH, int ID_WIDTH, int AxLEN_WIDTH,
 	int AxLOCK_WIDTH, int AWUSER_WIDTH, int ARUSER_WIDTH, int WUSER_WIDTH,
-	int RUSER_WIDTH, int BUSER_WIDTH>
+	int RUSER_WIDTH, int BUSER_WIDTH, int ACE_MODE, int CD_DATA_WIDTH,
+	int CACHELINE_SZ>
 int tlm2axi_bridge<ADDR_WIDTH,
 		DATA_WIDTH,
 		ID_WIDTH,
@@ -1036,7 +1240,10 @@ int tlm2axi_bridge<ADDR_WIDTH,
 		ARUSER_WIDTH,
 		WUSER_WIDTH,
 		RUSER_WIDTH,
-		BUSER_WIDTH>
+		BUSER_WIDTH,
+		ACE_MODE,
+		CD_DATA_WIDTH,
+		CACHELINE_SZ>
 ::prepare_wbeat(Transaction *tr, unsigned int offset)
 {
 	tlm::tlm_generic_payload& trans = tr->GetGP();
