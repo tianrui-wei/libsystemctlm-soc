@@ -26,6 +26,8 @@
 #ifndef TLM_BRIDGES_AMBA_H__
 #define TLM_BRIDGES_AMBA_H__
 
+#include "amba-ace.h"
+
 enum {
 	AXI_OKAY = 0,
 	AXI_EXOKAY = 1,
@@ -64,6 +66,12 @@ enum AXIVersion {
 enum {
 	AXI3_MAX_BURSTLENGTH = 16,
 	AXI4_MAX_BURSTLENGTH = 256,
+};
+
+enum {
+	ACE_MODE_OFF = 0,
+	ACE_MODE_ACE = 1,
+	ACE_MODE_ACELITE = 2,
 };
 
 template<int N>
