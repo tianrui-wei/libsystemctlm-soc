@@ -154,6 +154,126 @@ DataTransfer StreamingWidth(unsigned int streaming_width)
 	return t;
 }
 
+namespace ACE {
+
+DataTransfer ReadBarrier(uint32_t transaction_id = 0xAA, uint8_t domain = 1)
+{
+	static const uint8_t dummy = 0;
+	DataTransfer t;
+
+	t.cmd = DataTransfer::READ;
+	t.addr = 0;
+	t.data = &dummy;
+	t.length = 1;
+	t.streaming_width = t.length;
+
+	t.ext.gen_attr.enabled = true;
+	t.ext.gen_attr.modifiable = true;
+	t.ext.gen_attr.barrier = true;
+
+	t.ext.gen_attr.transaction_id = transaction_id;
+	t.ext.gen_attr.domain = domain;
+
+	return t;
 }
+
+DataTransfer WriteBarrier(uint32_t transaction_id = 0xAA, uint8_t domain = 1)
+{
+	static const uint8_t dummy = 0;
+	DataTransfer t;
+
+	t.cmd = DataTransfer::WRITE;
+	t.addr = 0;
+	t.data = &dummy;
+	t.length = 1;
+	t.streaming_width = t.length;
+
+	t.ext.gen_attr.enabled = true;
+	t.ext.gen_attr.modifiable = true;
+	t.ext.gen_attr.barrier = true;
+
+	t.ext.gen_attr.transaction_id = transaction_id;
+	t.ext.gen_attr.domain = domain;
+
+	return t;
+}
+
+enum {
+	DVMCompletionShift = 12,
+	DVMCmdShift = 12,
+	DVMCmdMask = 0x7,
+
+	DVMCompletionBit = 1 << DVMCompletionShift,
+
+	BranchPredictorInv = 0x1,
+	Sync = 0x4,
+
+	ARDVMMessage = 0xF,
+};
+
+#define DVM_CMD(x) (x << DVMCmdShift)
+#define DVM_COMPL(x) (x << DVMCompletionShift)
+
+DataTransfer DVMMessage(uint32_t dvm_cmd,
+				uint32_t transaction_id = 0xBB,
+				uint8_t domain = 1)
+{
+	static const uint8_t dummy = 0;
+	DataTransfer t;
+
+	t.cmd = DataTransfer::READ;
+	t.addr = dvm_cmd;
+	t.data = &dummy;
+	t.length = 1;
+	t.streaming_width = t.length;
+
+	t.ext.gen_attr.enabled = true;
+	t.ext.gen_attr.modifiable = true;
+
+	t.ext.gen_attr.transaction_id = transaction_id;
+	t.ext.gen_attr.domain = domain;
+	t.ext.gen_attr.snoop = ARDVMMessage;
+
+	return t;
+}
+
+DataTransfer ExclusiveLoad(uint64_t address, unsigned int length = 4)
+{
+	DataTransfer t;
+
+	t.cmd = DataTransfer::READ;
+	t.addr = address;
+	t.length = length;
+	t.streaming_width = t.length;
+
+	t.ext.gen_attr.enabled = true;
+	t.ext.gen_attr.exclusive = true;
+	t.ext.gen_attr.domain = 1;
+
+	return t;
+}
+
+DataTransfer ExclusiveStore(uint64_t address,
+				const unsigned char *data,
+				unsigned int length = 4)
+{
+	DataTransfer t;
+
+	t.cmd = DataTransfer::WRITE;
+	t.addr = address;
+	t.data = data;
+	t.length = length;
+	t.streaming_width = length;
+
+	t.ext.gen_attr.enabled = true;
+	t.ext.gen_attr.exclusive = true;
+	t.ext.gen_attr.domain = 1;
+
+	return t;
+}
+
+} /* namespace ACE */
+
+} /* namespace utils */
 
 #endif

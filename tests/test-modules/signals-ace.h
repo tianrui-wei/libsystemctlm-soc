@@ -21,8 +21,8 @@
  * THE SOFTWARE.
  */
 
-#ifndef SIGNALS_AXI_H__
-#define SIGNALS_AXI_H__
+#ifndef SIGNALS_ACE_H__
+#define SIGNALS_ACE_H__
 
 #include "tlm-bridges/amba.h"
 
@@ -38,7 +38,7 @@ template
 	int RUSER_WIDTH = 2,
 	int BUSER_WIDTH = 2,
 	int CD_DATA_WIDTH = DATA_WIDTH>
-class AXISignals : public sc_core::sc_module
+class ACESignals : public sc_core::sc_module
 {
 public:
 	/* Write address channel.  */
@@ -57,7 +57,6 @@ public:
 	sc_signal<AXISignal(AxLOCK_WIDTH) > awlock;
 
 	/* Write data channel.  */
-	sc_signal<AXISignal(ID_WIDTH) > wid;
 	sc_signal<bool> wvalid;
 	sc_signal<bool> wready;
 	sc_signal<sc_bv<DATA_WIDTH> > wdata;
@@ -91,7 +90,7 @@ public:
 	sc_signal<bool> rvalid;
 	sc_signal<bool> rready;
 	sc_signal<sc_bv<DATA_WIDTH> > rdata;
-	sc_signal<sc_bv<2> > rresp;
+	sc_signal<sc_bv<4> > rresp;
 	sc_signal<AXISignal(RUSER_WIDTH) > ruser;
 	sc_signal<AXISignal(ID_WIDTH) > rid;
 	sc_signal<bool> rlast;
@@ -132,13 +131,11 @@ public:
 		dev->awready(awready);
 		dev->awaddr(awaddr);
 		dev->awprot(awprot);
-		if (m_version == V_AXI4) {
-			if (AWUSER_WIDTH) {
-				dev->awuser(awuser);
-			}
-			dev->awregion(awregion);
-			dev->awqos(awqos);
+		if (AWUSER_WIDTH) {
+			dev->awuser(awuser);
 		}
+		dev->awregion(awregion);
+		dev->awqos(awqos);
 		dev->awcache(awcache);
 		dev->awburst(awburst);
 		dev->awsize(awsize);
@@ -146,15 +143,11 @@ public:
 		dev->awid(awid);
 		dev->awlock(awlock);
 
-		/* Write data channel.  */
-		if (m_version == V_AXI3) {
-			dev->wid(wid);
-		}
 		dev->wvalid(wvalid);
 		dev->wready(wready);
 		dev->wdata(wdata);
 		dev->wstrb(wstrb);
-		if (m_version == V_AXI4 && WUSER_WIDTH) {
+		if (WUSER_WIDTH) {
 			dev->wuser(wuser);
 		}
 		dev->wlast(wlast);
@@ -163,7 +156,7 @@ public:
 		dev->bvalid(bvalid);
 		dev->bready(bready);
 		dev->bresp(bresp);
-		if (m_version == V_AXI4 && BUSER_WIDTH) {
+		if (BUSER_WIDTH) {
 			dev->buser(buser);
 		}
 		dev->bid(bid);
@@ -173,13 +166,11 @@ public:
 		dev->arready(arready);
 		dev->araddr(araddr);
 		dev->arprot(arprot);
-		if (m_version == V_AXI4) {
-			if (ARUSER_WIDTH) {
-				dev->aruser(aruser);
-			}
-			dev->arregion(arregion);
-			dev->arqos(arqos);
+		if (ARUSER_WIDTH) {
+			dev->aruser(aruser);
 		}
+		dev->arregion(arregion);
+		dev->arqos(arqos);
 		dev->arcache(arcache);
 		dev->arburst(arburst);
 		dev->arsize(arsize);
@@ -192,11 +183,41 @@ public:
 		dev->rready(rready);
 		dev->rdata(rdata);
 		dev->rresp(rresp);
-		if (m_version == V_AXI4 && RUSER_WIDTH) {
+		if (RUSER_WIDTH) {
 			dev->ruser(ruser);
 		}
 		dev->rid(rid);
 		dev->rlast(rlast);
+
+		// AXI4 ACE + ACELite signals
+		dev->awsnoop(awsnoop);
+		dev->awdomain(awdomain);
+		dev->awbar(awbar);
+		dev->arsnoop(arsnoop);
+		dev->ardomain(ardomain);
+		dev->arbar(arbar);
+
+		// AXI4 ACE signals
+		dev->wack(wack);
+		dev->rack(rack);
+
+		// Snoop address channel
+		dev->acvalid(acvalid);
+		dev->acready(acready);
+		dev->acaddr(acaddr);
+		dev->acsnoop(acsnoop);
+		dev->acprot(acprot);
+
+		// Snoop response channel
+		dev->crvalid(crvalid);
+		dev->crready(crready);
+		dev->crresp(crresp);
+
+		// Snoop data channel
+		dev->cdvalid(cdvalid);;
+		dev->cdready(cdready);
+		dev->cddata(cddata);
+		dev->cdlast(cdlast);
 	}
 
 	void Trace(sc_trace_file *f)
@@ -217,7 +238,6 @@ public:
 		sc_trace(f, awlock, awlock.name());
 
 		/* Write data channel.  */
-		sc_trace(f, wid, wid.name());
 		sc_trace(f, wvalid, wvalid.name());
 		sc_trace(f, wready, wready.name());
 		sc_trace(f, wdata, wdata.name());
@@ -255,6 +275,35 @@ public:
 		sc_trace(f, ruser, ruser.name());
 		sc_trace(f, rid, rid.name());
 		sc_trace(f, rlast, rlast.name());
+
+		// AXI4 ACE + ACELite signals
+		sc_trace(f, awsnoop, awsnoop.name());
+		sc_trace(f, awdomain, awdomain.name());
+		sc_trace(f, awbar, awbar.name());
+		sc_trace(f, arsnoop, arsnoop.name());
+		sc_trace(f, ardomain, ardomain.name());
+		sc_trace(f, arbar, arbar.name());
+
+		sc_trace(f, wack, wack.name());
+		sc_trace(f, rack, rack.name());
+
+		// Snoop address channel
+		sc_trace(f, acvalid, acvalid.name());
+		sc_trace(f, acready, acready.name());
+		sc_trace(f, acaddr, acaddr.name());
+		sc_trace(f, acsnoop, acsnoop.name());
+		sc_trace(f, acprot, acprot.name());
+
+		// Snoop response channel
+		sc_trace(f, crvalid, crvalid.name());
+		sc_trace(f, crready, crready.name());
+		sc_trace(f, crresp, crresp.name());
+
+		// Snoop data channel
+		sc_trace(f, cdvalid, cdvalid.name());;
+		sc_trace(f, cdready, cdready.name());
+		sc_trace(f, cddata, cddata.name());
+		sc_trace(f, cdlast, cdlast.name());
 	}
 
 	template<typename T>
@@ -263,8 +312,7 @@ public:
 		connect(&dev);
 	}
 
-	AXISignals(sc_core::sc_module_name name,
-			AXIVersion version = V_AXI4) :
+	ACESignals(sc_core::sc_module_name name) :
 		awvalid("awvalid"),
 		awready("awready"),
 		awaddr("awaddr"),
@@ -279,7 +327,6 @@ public:
 		awid("awid"),
 		awlock("awlock"),
 
-		wid("wid"),
 		wvalid("wvalid"),
 		wready("wready"),
 		wdata("wdata"),
@@ -315,10 +362,33 @@ public:
 		rid("rid"),
 		rlast("rlast"),
 
-		m_version(version)
-	{}
+		// AXI4 ACE signals
+		awsnoop("awsnoop"),
+		awdomain("awdomain"),
+		awbar("awbar"),
+		wack("wack"),
+		arsnoop("arsnoop"),
+		ardomain("ardomain"),
+		arbar("arbar"),
+		rack("rack"),
 
-private:
-	AXIVersion m_version;
+		// Snoop address channel
+		acvalid("acvalid"),
+		acready("acready"),
+		acaddr("acaddr"),
+		acsnoop("acsnoop"),
+		acprot("acprot"),
+
+		// Snoop response channel
+		crvalid("crvalid"),
+		crready("crready"),
+		crresp("crresp"),
+
+		// Snoop data channel
+		cdvalid("cdvalid"),
+		cdready("cdready"),
+		cddata("cddata"),
+		cdlast("cdlast")
+	{}
 };
 #endif
