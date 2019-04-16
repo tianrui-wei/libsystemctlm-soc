@@ -90,11 +90,14 @@ public:
 			genattr->set_exclusive(t.ext.gen_attr.exclusive);
 			genattr->set_locked(t.ext.gen_attr.locked);
 			genattr->set_bufferable(t.ext.gen_attr.bufferable);
-			genattr->set_modifiable(t.ext.gen_attr.bufferable);
+			genattr->set_modifiable(t.ext.gen_attr.modifiable);
 			genattr->set_read_allocate(t.ext.gen_attr.read_allocate);
 			genattr->set_write_allocate(t.ext.gen_attr.write_allocate);
 			genattr->set_qos(t.ext.gen_attr.qos);
 			genattr->set_region(t.ext.gen_attr.qos);
+			genattr->set_snoop(t.ext.gen_attr.snoop);
+			genattr->set_domain(t.ext.gen_attr.domain);
+			genattr->set_barrier(t.ext.gen_attr.barrier);
 
 			gp->set_extension(genattr);
 		}
