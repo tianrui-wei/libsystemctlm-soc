@@ -66,11 +66,88 @@ Similar to the AXI protocol checker the AXI4Lite protocol checker is configured
 at construction with an AXILitePCConfig. Through the AXILitePCConfig the checks
 desired to be performed by the protocol checker are setup.
 
+ACEProtocolChecker
+------------------
+The protocol checker monitors the ACE signaling and reports protocol
+errors detected on the signals. The checks to be performed by the protocol
+checker must be enabled through configuration (in the default mode no
+checks are configured). The following is a list of checks the protocol
+checker supports:
+
+	* Check that signals in any channel (AR, AW, R, B, W, AC, CR and
+	  CD) are stable while valid is asserted but ready is low.
+
+	* Check that rlast, rack, wlast and wack are generated correctly.
+
+	* Checks read transaction signaling. This check verifies signaling
+	  on the ar and r channels.
+
+	* Checks write transaction signaling. This check verifies
+	  signaling the aw, w and b channels.
+
+	* Checks snoop transaction signaling. This check verifies
+	  signaling on the ac, cr and cd channels.
+
+	* Checks ACE barriers are issued in the same sequence on the read
+	  and write channels.
+
+	* Verifies that expected handshakes signals on the channels are
+	  detected after receiving awvalid, arvalid and acvalid. It is
+	  considered and reported as a hangup if a given amount of clock
+	  cycles (default 200) pass before an expected signal has been
+          detected.
+
+	* Verifies that arvalid, rvalid, awvalid, wvalid, bvalid, rack,
+	  wack, acvalid, crvalid and cdvalid are deasserted the first
+          cycle after reset has been released.
+
+	* Can opitionally follow cacheline allocations and assert if it
+	  recomendations on section 5.2.2a [1] are not followed.
+
+ACELiteProtocolChecker
+------------------
+
+An ACELiteProtocolChecker is obtained by creating an ACEProtocolChecker
+but configuring it to run in ACELite mode through the template parameter
+ACE_MODE. This force disables all checks not valid on ACELite signaling.
+The following is a list of supported checks by the ACELite protocol
+checker.
+
+	* Check that signals in any channel (AR, AW, R, B, W) are stable
+	  while valid is asserted but ready is low.
+
+	* Checks read transaction signaling. This check verifies signaling
+	  on the ar and r channels.
+
+	* Checks write transaction signaling. This check verifies
+	  signaling the aw, w and b channels.
+
+	* Checks ACE barriers are issued in the same sequence on the read
+	  and write channels.
+
+	* Verifies that expected handshakes signals on the channels are
+	  detected after receiving awvalid and arvalid. It is considered
+	  and reported as a hangup if a given amount of clock cycles
+	  (default 200) pass before an expected signal has been detected.
+
+	* Verifies that arvalid, rvalid, awvalid, wvalid  and bvalid are
+	  deasserted the first cycle after reset has been released.
+
+	* Can opitionally follow cacheline allocations and assert if it
+	  recomendations on section 5.2.2a [1] are not followed.
+
+ACEPCConfig - Configuraring the protocol checker
+------------------------------------------------
+Similar to the AXI protocol checker the ACE and ACELite protocol checkers
+are configured at construction with an ACEPCConfig. Through the
+ACEPCConfig the checks desired to be performed by the protocol checkers
+are setup.
+
 Error reports
 -------------
-The AXI and AXI4Lite protocol checkers report errors using systemc's
-SC_REPORT_ERROR macro and errors can thus be caught/intercepted through
-systemc's error reporting API.
+The AXI, AXI4Lite, ACE and ACELite protocol checkers report errors using
+systemc's SC_REPORT_ERROR macro and errors can thus be caught/intercepted
+through systemc's error reporting API.
 
 Example 1 - Default configuration
 ---------------------------------
@@ -162,6 +239,54 @@ AXILitePCConfig checker_config()
 {
 	...
 	AXILiteProtocolChecker<32, 32> checker("checker", checker_config());
+	...
+}
+...
+
+Example 6 - Configuring the ACE protocol checker to perform all checks
+---------------------------------------------------------------------------
+The following example configures the protocol checker to perform all checks:
+
+...
+ACEPCConfig checker_config()
+{
+	ACEPCConfig cfg;
+
+	cfg.enable_all_checks();
+
+	return cfg;
+}
+...
+{
+	...
+	ACEProtocolChecker<32, 32> checker("checker", checker_config());
+	...
+}
+
+Example 7 - Obtaining and configuring an ACELite protocol checker
+---------------------------------------------------------------------------
+The following example configures the protocol checker to perform all checks:
+
+...
+
+typedef ACEProtocolChecker<
+			32,
+			32
+			....
+			ACE_MODE_ACELITE> ACELiteProtocolChecker;
+
+ACEPCConfig checker_config()
+{
+	ACEPCConfig cfg;
+
+	cfg.enable_all_checks();
+
+	return cfg;
+}
+...
+{
+	...
+	ACELiteProtocolChecker checker("checker", checker_config());
 	...
 }
 ...
