@@ -208,6 +208,11 @@ private:
 				trans.set_data_ptr(transfers->getData());
 			} else {
 				data = new uint8_t[transfers->getDataLength()];
+
+				if (m_debug) {
+					memset(data, 0x0, transfers->getDataLength());
+				}
+
 				trans.set_data_ptr(data);
 			}
 
