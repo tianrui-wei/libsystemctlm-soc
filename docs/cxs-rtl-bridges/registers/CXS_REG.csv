@@ -70,7 +70,7 @@ INTR_FLIT_TXN_ENABLE_REG,0x3A8,rw,0x0,Flit Transaction Interrupt Enable
 ,,,,
 ,,,,
 ,,, ,
-FLIT MEMORY,,,,
+FLIT MEMORY,,,,"FW -> FLIT_WIDTH, FCW -> FLIT_CONTROL_WIDTH"
 RX_BASE_FLIT_X_LSW_Y,0x3100 + (X*FW)+(Y*0x4),ro,"Read Only Memory for Flit from AXI4 Side, X=Flit Index,range 0-14,Y= Flit offet index,range 0 to FW",
 RX_BASE_FLIT_CNTL_X_LSW_Y,0x3C00 + (X*FCW)+(Y*0x4),ro,"Read Only Memory for Flit from AXI4 Side, X=Flit Index,range 0-14,Y= Flit offet index,range 0 to FCW",
 TX_BASE_FLIT_X_LSW_Y,0x4100 + (X*FW)+(Y*0x4),wo,"Write Memory for Flit from AXI4 side, X=Flit Index,range 0-14,Y= Flit offet index,range 0 to FW",
