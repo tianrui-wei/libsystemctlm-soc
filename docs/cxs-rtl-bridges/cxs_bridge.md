@@ -383,7 +383,7 @@ within which TLP{s) are packaged.
 
 Each Buffer is addressable through AXI4-Lite Bus with an offset address meant
 for a particular channel. Based on the number of credits available which can be
-checked through the CHI_BRIDGE_TXREQ_CUR_CREDITS_REG, The TLP{s) are loaded
+checked through the CXS_BRIDGE_TXREQ_CUR_CREDITS_REG, The TLP{s) are loaded
 into the Transmit CXS Data Memory through AXI4-Lite bus, Along with the TLP(s),
 Control information related to packaged TLP(s) is also stored in Transmit CXS
 Control Memory. The TLP(s) in parallel access of the Transmit CXS Memory become
