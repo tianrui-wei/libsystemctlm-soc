@@ -52,7 +52,7 @@ INTR_ERROR_CLEAR_REG,0x210,wo,0x0,Bridge error Interrupt Clear
 INTR_ERROR_ENABLE_REG,0x214,rw,0x0,Bridge error Interrupt Enable
 CXS_BRIDGE_FLIT_CONFIG_REG,0x300,ro,0x00006900,Flit configuration register
 CXS_BRIDGE_CONFIGURE_REG,0x304,rw,0x0,Bridge Configure Register
-RX_REFILL_CREDITS_REG,0X308,rw,0xE,RXSNP Credits refill register 
+RX_REFILL_CREDITS_REG,0X308,rw,0xF,RXSNP Credits refill register 
 CXS_LOW_POWER_REG,0x30C,rw,0x0,CXS Low Power Register
 CXS_BRIDGE_CHN_TX_STS_REG,0x330,ro,0x0,Transmit Channel Status Register
 CXS_BRIDGE_CHN_RX_STS_REG,0x334,ro,0x0,CXS Bridge Receive Channel Status Register
