@@ -122,10 +122,10 @@ Bridge top level and block level port map can be found below:
         -   u_CXS_TX_Credit (cxs_link_credit_manager.v)
         -   u_CXS_RX_Credit (cxs_link_credit_manager.v)
         -   u_regs (cxs_register_interface.v)
-            -   u_cxs_txflit_tx_mgmt (chi_txflit_mgmt.v)
-            -   u_cxs_txflit_tx_ram(chi_txflit_ram.v)
-            -   u_cxs_txflit_rx_ram (chi_rxflit_ram.v)
-            -   u_cxs_intr_handler (chi_intr_handler)
+            -   u_cxs_txflit_tx_mgmt (cxs_txflit_mgmt.v)
+            -   u_cxs_txflit_tx_ram(cxs_txflit_ram.v)
+            -   u_cxs_txflit_rx_ram (cxs_rxflit_ram.v)
+            -   u_cxs_intr_handler (cxs_intr_handler)
 
 ### Hardware Block Description
 
