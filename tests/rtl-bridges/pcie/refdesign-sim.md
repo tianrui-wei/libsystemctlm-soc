@@ -67,8 +67,8 @@ with the user 'ubuntu' and password 'pass'.
 
 Login into the Ubuntu cloud image and install below packages:
 ```
-sudo apt-get update 
-sudo apt-get install git build-essential autoconf flex bison
+$ sudo apt-get update 
+$ sudo apt-get install git build-essential autoconf flex bison
 ```
 
 Verify that the command line contains *intel_iommu=on*:
