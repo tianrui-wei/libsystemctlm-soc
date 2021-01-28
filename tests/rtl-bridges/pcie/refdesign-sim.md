@@ -1,7 +1,6 @@
 # Launching the refdesign-sim demo
 
-Table of Contents
-=================
+## Table of Contents
 
    * [Launching the refdesign-sim demo](#launching-the-refdesign-sim-demo)
       * [Overview](#overview)
