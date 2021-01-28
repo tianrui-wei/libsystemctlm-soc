@@ -50,7 +50,7 @@ not allowed to use kvm):
 $ qemu-system-x86_64                                                       \
     -M q35,accel=kvm,kernel-irqchip=split -m 4G -smp 4 -enable-kvm         \
     -device virtio-net-pci,netdev=net0 -netdev type=user,id=net0           \
-    -serial mon:stdio -machine-path /tmp/qemu   -display sdl               \
+    -serial mon:stdio -machine-path /tmp/qemu   -display none              \
     -device intel-iommu,intremap=on,device-iotlb=on                        \
     -device ioh3420,id=rootport,slot=0 -device ioh3420,id=rootport1,slot=1 \
     -drive file=~/Downloads/focal-server-cloudimg-amd64.img,format=qcow2   \
