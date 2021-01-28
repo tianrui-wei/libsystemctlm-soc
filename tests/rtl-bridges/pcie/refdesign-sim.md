@@ -60,7 +60,8 @@ $ qemu-system-x86_64                                                       \
     -initrd ~/Downloads/focal-server-cloudimg-amd64-initrd-generic
 ```
 
-Above command provides network access through a virtio-net-pci device.
+Above command provides network access through a virtio-net-pci device and login
+with the user 'ubuntu' and password 'pass'.
 
 ## Required packages in the Ubuntu cloud image 
 
