@@ -135,8 +135,8 @@ $ ls test-pcie-ep-master-vfio test-pcie-ep-slave-vfio
 
 ## Launching QEMU and the refdesign-sim demo 
 
-Instructions on how to connect QEMU with the hotplugged PCIe EP in the
-refdesign-sim demo can be found inside:
+Instructions on how to hotplug the PCIe EP in the refdesign-sim demo into QEMU
+can be found inside:
 [../../../docs/pcie-rtl-bridges/overview.md](../../../docs/pcie-rtl-bridges/overview.md).
 
 ## Exercising the refdesign-sim demo with VFIO test applications
