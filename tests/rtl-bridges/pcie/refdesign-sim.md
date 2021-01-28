@@ -1,5 +1,22 @@
 # Launching the refdesign-sim demo
 
+Table of Contents
+=================
+
+   * [Launching the refdesign-sim demo](#launching-the-refdesign-sim-demo)
+      * [Overview](#overview)
+      * [Preparation step](#preparation-step)
+      * [Clone and build Xilinx QEMU on the host](#clone-and-build-xilinx-qemu-on-the-host)
+      * [Create a disk image for Ubuntu LTS](#create-a-disk-image-for-ubuntu-lts)
+      * [Install Ubuntu LTS on the disk image](#install-ubuntu-lts-on-the-disk-image)
+      * [Required packages in the Ubuntu LTS 20.04 VM](#required-packages-in-the-ubuntu-lts-2004-vm)
+      * [Enable the iommu in the Ubuntu LTS 20.04 VM](#enable-the-iommu-in-the-ubuntu-lts-2004-vm)
+      * [Install SystemC in the Ubuntu LTS 20.04 VM](#install-systemc-in-the-ubuntu-lts-2004-vm)
+      * [Install Verilator in the Ubuntu LTS 20.04 VM](#install-verilator-in-the-ubuntu-lts-2004-vm)
+      * [Build libsystemctlm-soc PCIe RTL VFIO demos in the Ubuntu LTS 20.04 VM](#build-libsystemctlm-soc-pcie-rtl-vfio-demos-in-the-ubuntu-lts-2004-vm)
+      * [Launching QEMU and the refdesign-sim demo](#launching-qemu-and-the-refdesign-sim-demo)
+      * [Exercising the refdesign-sim demo with VFIO test applications](#exercising-the-refdesign-sim-demo-with-vfio-test-applications)
+
 ## Overview 
 
 Instructions for how to build and run an Ubuntu based guest system with Xilinx
