@@ -1,21 +1,5 @@
 # Launching the refdesign-sim demo
 
-## Table of Contents
-
-   * [Launching the refdesign-sim demo](#launching-the-refdesign-sim-demo)
-      * [Overview](#overview)
-      * [Preparation step](#preparation-step)
-      * [Clone and build Xilinx QEMU on the host](#clone-and-build-xilinx-qemu-on-the-host)
-      * [Create a disk image for Ubuntu LTS](#create-a-disk-image-for-ubuntu-lts)
-      * [Install Ubuntu LTS on the disk image](#install-ubuntu-lts-on-the-disk-image)
-      * [Required packages in the Ubuntu LTS 20.04 VM](#required-packages-in-the-ubuntu-lts-2004-vm)
-      * [Enable the iommu in the Ubuntu LTS 20.04 VM](#enable-the-iommu-in-the-ubuntu-lts-2004-vm)
-      * [Install SystemC in the Ubuntu LTS 20.04 VM](#install-systemc-in-the-ubuntu-lts-2004-vm)
-      * [Install Verilator in the Ubuntu LTS 20.04 VM](#install-verilator-in-the-ubuntu-lts-2004-vm)
-      * [Build libsystemctlm-soc PCIe RTL VFIO demos in the Ubuntu LTS 20.04 VM](#build-libsystemctlm-soc-pcie-rtl-vfio-demos-in-the-ubuntu-lts-2004-vm)
-      * [Launching QEMU and the refdesign-sim demo](#launching-qemu-and-the-refdesign-sim-demo)
-      * [Exercising the refdesign-sim demo with VFIO test applications](#exercising-the-refdesign-sim-demo-with-vfio-test-applications)
-
 ## Overview 
 
 Instructions for how to build and run an Ubuntu based guest system with Xilinx
@@ -23,112 +7,77 @@ QEMU together with the PCIe EP refdesign-sim demo are found below. More
 information about the PCIe EP HW bridges are found in
 [../../../docs/pcie-rtl-bridges/overview.md](../../../docs/pcie-rtl-bridges/overview.md).
 
-## Preparation step
+## Preparing the Ubuntu cloud image VM 
 
-1. Download the Ubuntu LTS 20.04 installer from www.ubuntu.com
-
-## Clone and build Xilinx QEMU on the host
-
-Clone and configure qemu by issuing the following commands:
+Download the the Ubuntu cloud image.
 
 ```
-~$ git clone https://github.com/Xilinx/qemu.git
-~$ mkdir qemu-build
-~$ cd qemu-build
-~/qemu-build$ ../qemu/configure \
-    --target-list=microblazeel-softmmu,aarch64-softmmu,x86_64-softmmu \
-    --enable-sdl --enable-sdl-image
+~$ cd ~/Downloads/
+~$ wget https://cloud-images.ubuntu.com/focal/20210125/focal-server-cloudimg-amd64.img
+~$ wget https://cloud-images.ubuntu.com/focal/20210125/unpacked/focal-server-cloudimg-amd64-vmlinuz-generic
+~$ wget https://cloud-images.ubuntu.com/focal/20210125/unpacked/focal-server-cloudimg-amd64-initrd-generic
 ```
 
-Make sure to that SDL support is enabled on the output printed by
-configure.
+Resize the image to 10G.
 
 ```
-...
-SDL support       yes (2.0.9)
-SDL image support yes
-...
+~$ qemu-img resize ~/Downloads/focal-server-cloudimg-amd64.img 10G
 ```
 
-In case SDL support is missing install the required development packages
-on the host and rerun configure (below example is for Debian / Ubuntu
-systems):
+Create a disk image with user-data to be used for starting the cloud
+image.
 
 ```
-~$ sudo apt-get install libsdl2-dev libsdl2-image-dev
+~$ sudo apt-get install cloud-image-utils
+~$ cd ~/Downloads
+~$ cat >user-data <<EOF
+#cloud-config
+password: pass 
+chpasswd: { expire: False }
+ssh_pwauth: True
+EOF
+~$ cloud-localds user-data.img user-data
 ```
 
-Finally build QEMU:
-```
-~/qemu-build$ make
-```
 
-The following two binaries will be found after the build:
+## Launch the cloud image
 
-```
-~/qemu-build$ ls qemu-img
-~/qemu-build$ ls x86_64-softmmu//qemu-system-x86_64
-```
-
-## Create a disk image for Ubuntu LTS
-
-Create a disk image where Ubuntu LTS 20.04 will be installed using the
-following command:
+Launch the Ubuntu cloud image in QEMU using the following command (please
+change 'accel=kvm' to 'accel=tcg' and remove '-enable-kvm' in case the user is
+not allowed to use kvm):
 
 ```
-~/qemu-build/qemu-img create -f qcow2 hd0.qcow2 10G
-```
-
-## Install Ubuntu LTS on the disk image
-
-Launch the Ubuntu LTS 20.04 installer (ubuntu-20.04-desktop-amd64.iso) in
-QEMU with the newly created disk image attached using the following
-command (please change 'accel=kvm' to 'accel=tcg' in case the user is not
-allowed to use kvm):
-
-```
-$ ~/qemu-build/x86_64-softmmu/qemu-system-x86_64                           \
+$ qemu-system-x86_64                                                       \
     -M q35,accel=kvm,kernel-irqchip=split -m 4G -smp 4 -enable-kvm         \
-    -drive file=hd0.qcow2,format=qcow2 -display sdl                        \
     -device virtio-net-pci,netdev=net0 -netdev type=user,id=net0           \
-    -serial mon:stdio -machine-path /tmp/qemu                              \
+    -serial mon:stdio -machine-path /tmp/qemu   -display sdl               \
     -device intel-iommu,intremap=on,device-iotlb=on                        \
     -device ioh3420,id=rootport,slot=0 -device ioh3420,id=rootport1,slot=1 \
-    -cdrom ubuntu-20.04-desktop-amd64.iso
+    -drive file=~/Downloads/focal-server-cloudimg-amd64.img,format=qcow2   \
+    -drive file=~/Downloads/user-data.img,format=raw                       \
+    -kernel ~/Downloads/focal-server-cloudimg-amd64-vmlinuz-generic        \
+    -append "root=/dev/sda1 ro console=tty1 console=ttyS0 intel_iommu=on"  \
+    -initrd ~/Downloads/focal-server-cloudimg-amd64-initrd-generic
 ```
 
 Above command provides network access through a virtio-net-pci device.
 
-Proceed with installing Ubuntu LTS 20.04 and restart QEMU without the
-*-cdrom ubuntu-20.04-desktop-amd64.iso* arguments when done.
+## Required packages in the Ubuntu cloud image 
 
-## Required packages in the Ubuntu LTS 20.04 VM
-
-Login into the Ubuntu LTS 20.04 VM and install below packages:
+Login into the Ubuntu cloud image and install below packages:
 ```
+sudo apt-get update 
 sudo apt-get install git build-essential autoconf flex bison
 ```
 
-## Enable the iommu in the Ubuntu LTS 20.04 VM
-
-Enable the iommu by adding *intel_iommu=on* to the Linux kernel's
-command line and rebooting the system.
-
-```
-$ sudo sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT.*\)"/\1 intel_iommu=on"/' /etc/default/grub
-$ sudo update-grub
-$ sudo reboot
-```
-
-Verify that the command line contains *intel_iommu=on* after rebooting by
-issuing:
+Verify that the command line contains *intel_iommu=on*:
 ```
 $ cat /proc/cmdline
-BOOT_IMAGE=/boot/vmlinuz-5.8.0-36-generic root=UUID=0b68e1e4-5cf8-4db2-a476-3eea6e3d46c2 ro quiet splash intel_iommu=on vt.handoff=7
+"...ro quiet splash intel_iommu=on..."
 ```
 
 
-## Install SystemC in the Ubuntu LTS 20.04 VM
+## Install SystemC in the Ubuntu cloud image
 
 Download and install SystemC 2.3.2 by issuing the following commands in
 the VM:
@@ -143,7 +92,7 @@ $ make
 $ sudo make install
 ```
 
-## Install Verilator in the Ubuntu LTS 20.04 VM
+## Install Verilator in the Ubuntu cloud image
 
 Download and install Verilator v4.010 by issuing the following commands in
 the VM:
@@ -159,7 +108,7 @@ $ make
 $ sudo make install
 ```
 
-## Build libsystemctlm-soc PCIe RTL VFIO demos in the Ubuntu LTS 20.04 VM
+## Build libsystemctlm-soc PCIe RTL VFIO demos in the Ubuntu cloud image
 
 Clone and build libsystemctlm-soc's PCIe VFIO demos by issuing the
 following commands in the VM:
@@ -184,8 +133,8 @@ $ ls test-pcie-ep-master-vfio test-pcie-ep-slave-vfio
 
 ## Launching QEMU and the refdesign-sim demo 
 
-Instructions on how to launch and connect QEMU (running above Ubuntu VM) with 
-the PCIe EP in the refdesign-sim demo can be found inside:
+Instructions on how to connect QEMU with the hotplugged PCIe EP in the
+refdesign-sim demo can be found inside:
 [../../../docs/pcie-rtl-bridges/overview.md](../../../docs/pcie-rtl-bridges/overview.md).
 
 ## Exercising the refdesign-sim demo with VFIO test applications
