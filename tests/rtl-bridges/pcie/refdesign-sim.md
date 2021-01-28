@@ -86,7 +86,7 @@ the VM:
 ```
 $ mkdir ~/Downloads/
 $ cd ~/Downloads/
-$ wget -O systemc-2.3.2.tar.gz http://www.accellera.org/images/downloads/standards/systemc/systemc-2.3.2.tar.gz
+$ wget http://www.accellera.org/images/downloads/standards/systemc/systemc-2.3.2.tar.gz
 $ tar xzf systemc-2.3.2.tar.gz
 $ cd systemc-2.3.2
 $ ./configure --prefix=/opt/systemc-2.3.2
