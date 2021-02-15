@@ -48,11 +48,9 @@ using namespace std;
 #include "test-modules/utils.h"
 #include "test-modules/memory.h"
 
-#include "Vaxifull_dev.h"
 #include "Vsystem.h"
 
 #include <verilated_vcd_sc.h>
-#include "verilated.h"
 
 using namespace utils;
 
@@ -61,6 +59,8 @@ using namespace utils;
 #define CACHELINE_SIZE 64
 #define CACHE_SIZE (4 * CACHELINE_SIZE)
 #define RAM_SIZE (32 * CACHELINE_SIZE)
+
+#define LINE(l) (l * CACHELINE_SIZE)
 
 typedef AXISignals<
 	64,		// ADDR_WIDTH
@@ -90,10 +90,28 @@ typedef axi2tlm_bridge<
 
 TrafficDesc transactions(merge({
 	// Write something to address 8
-        Write(8, DATA(0x1, 0x2, 0x3, 0x4)),
+	Write(LINE(0), DATA(0x1, 0x2, 0x3, 0x4)),
 	// Read it back and check that we get the expected data.
-        Read(8, 4),
-		Expect(DATA(0x1, 0x2, 0x3, 0x4), 4)
+	Read(LINE(0), 4),
+		Expect(DATA(0x1, 0x2, 0x3, 0x4), 4),
+	// Write something to address 8
+	Write(LINE(1), DATA(0x1, 0x2, 0x3, 0x4)),
+	// Read it back and check that we get the expected data.
+	Read(LINE(1), 4),
+		Expect(DATA(0x1, 0x2, 0x3, 0x4), 4),
+
+	// Write something to address 8
+	Write(LINE(2), DATA(0x1, 0x2, 0x3, 0x4)),
+	// Read it back and check that we get the expected data.
+	Read(LINE(2), 4),
+		Expect(DATA(0x1, 0x2, 0x3, 0x4), 4),
+
+	// Write something to address 8
+	Write(0x10000, DATA(0x1, 0x2, 0x3, 0x4)),
+	Write(0x20000, DATA(0x1, 0x2, 0x3, 0x4)),
+	Write(0x30000, DATA(0x1, 0x2, 0x3, 0x4)),
+	Write(0x40000, DATA(0x1, 0x2, 0x3, 0x4)),
+	Write(0x50000, DATA(0x1, 0x2, 0x3, 0x4)),
 }));
 
 // Top simulation module.
@@ -169,7 +187,7 @@ SC_MODULE(Top)
 		axi_signals("axi-signals"),
 		axi_bridge("axi-bridge"),
 
-		mem("mem", sc_time(10, SC_NS), 2048),
+		mem("mem", sc_time(10, SC_NS), 0x51000),
 		system("system"), 
 
 		sys_rst_n("sys_rst_n"),
@@ -405,12 +423,8 @@ int sc_main(int argc, char *argv[])
         // If verilator was invoked with --trace argument,
         // and if at run time passed the +trace argument, turn on tracing
         VerilatedVcdSc* tfp = NULL;
-        const char* flag = Verilated::commandArgsPlusMatch("trace");
-        if (flag && 0 == strcmp(flag, "+trace")) {
-                tfp = new VerilatedVcdSc;
-                top.system.trace(tfp, 99);
-                tfp->open("vlt_dump.vcd");
-        }
+	tfp = new VerilatedVcdSc;
+	tfp->open("vlt_dump.vcd");
 #endif
 
 	// Reset is active low. Emit a reset cycle.

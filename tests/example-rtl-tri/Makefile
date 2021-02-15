@@ -24,14 +24,14 @@
 -include ../../.config.mk
 include ../Rules.mk
 
-VFLAGS=-Wno-fatal --pins-bv 2
+VFLAGS=-Wno-fatal --pins-bv 2 -sc
 
 VM_TRACE=1
 
 ifeq "$(VM_TRACE)" "1"
 VFLAGS += --trace
-SC_OBJS += verilated_vcd_c.o
-SC_OBJS += verilated_vcd_sc.o
+VERILATED_OBJS_COMMON += verilated_vcd_c.o
+VERILATED_OBJS_COMMON += verilated_vcd_sc.o
 CPPFLAGS += -DVM_TRACE=1
 endif
 
@@ -41,18 +41,16 @@ CPPFLAGS += -I $(VERILATOR_ROOT)/include
 CPPFLAGS += -I ../../ -I ../ -I .
 CXXFLAGS += -Wno-strict-overflow -Wall -g
 
-AXIFULL_DEV_V += axifull_dev.v
-AXIFULL_DEV_H += $(VOBJ_DIR)/Vaxifull_dev.h
-AXIFULL_DEV_LIB += $(VOBJ_DIR)/Vaxifull_dev__ALL.a
-
 OPENPITON_DEV_V += system.v
 OPENPITON_DEV_H += $(VOBJ_DIR)/Vsystem.h
 OPENPITON_DEV_LIB += $(VOBJ_DIR)/Vsystem__ALL.a
 
-OBJS_COMMON += ../test-modules/memory.o $(SC_OBJS)
+OBJS_COMMON += ../test-modules/memory.o
+VERILATED_OBJS_COMMON += $(OBJS_COMMON)
+ALL_OBJS += $(VERILATED_OBJS_COMMON)
 
 EXAMPLE_RTL_TRI_OBJS += example-rtl-tri.o $(VERILATED_O)
-ALL_OBJS += $(OBJS_COMMON) $(EXAMPLE_RTL_AXI4_OBJS)
+ALL_OBJS += $(EXAMPLE_RTL_TRI_OBJS)
 
 TARGETS += example-rtl-tri
 
@@ -63,9 +61,16 @@ all: $(TARGETS)
 ## Dep generation ##
 -include $(ALL_OBJS:.o=.d)
 
-$(EXAMPLE_RTL_TRI_OBJS): $(AXIFULL_DEV_H)
+include $(VERILATOR_ROOT)/include/verilated.mk
 
-example-rtl-tri: $(OPENPITON_DEV_LIB) $(AXIFULL_DEV_LIB) $(EXAMPLE_RTL_TRI_OBJS)  $(OBJS_COMMON)  
+$(OPENPITON_DEV_LIB): $(OPENPITON_DEV_V)
+	$(VENV) $(VERILATOR) $(VFLAGS) --top-module $(^:.v=) $^
+	$(MAKE) -C $(VOBJ_DIR) CXXFLAGS="$(CXXFLAGS)" -f Vsystem.mk
+	$(MAKE) -C $(VOBJ_DIR) CXXFLAGS="$(CXXFLAGS)" -f Vsystem.mk verilated.o
+
+$(EXAMPLE_RTL_TRI_OBJS): $(OPENPITON_DEV_LIB)
+
+example-rtl-tri: $(EXAMPLE_RTL_TRI_OBJS) $(OPENPITON_DEV_LIB) $(VERILATED_OBJS_COMMON)
 	$(LINK.cc) $^ $(LDLIBS) -o $@
 
 clean:
