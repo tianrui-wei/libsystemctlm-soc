@@ -65,6 +65,22 @@ public:
 		target_socket.register_b_transport(this, &tlm_aligner::b_transport);
 	}
 
+	void set_bus_width(uint32_t w) {
+		bus_width = w;
+	}
+
+	uint32_t get_bus_width(void) {
+		return bus_width;
+	}
+
+	void set_max_len(uint64_t len) {
+		max_len = len;
+	}
+
+	uint64_t get_max_len(void) {
+		return max_len;
+	}
+
 private:
 	// Bus with in bits.
 	uint32_t bus_width;
@@ -118,17 +134,19 @@ private:
 		natural_alignment = compute_natural_alignment(addr);
 		addr_range = compute_max_addr_range(addr, natural_alignment);
 
-		if ((!do_natural_alignment || addr % natural_alignment == 0) &&
-                    len < max_len && streaming_width == len) {
-			// Fast path, just forward the transaction.
-			init_socket->b_transport(trans, delay);
-			return;
-		}
-
 		// FIXME: Streaming width is mandatory according to spec but
 		// we don't seem to set it always.
 		if (streaming_width == 0) {
 			streaming_width = len;
+		}
+
+		if ((!do_natural_alignment || addr % natural_alignment == 0) &&
+		     len < max_len &&
+		     len == addr_range &&
+		     streaming_width == len) {
+			// Fast path, just forward the transaction.
+			init_socket->b_transport(trans, delay);
+			return;
 		}
 
 		// Since data and byte_enable ptrs remain NULL, nothing gets copied.
@@ -175,6 +193,7 @@ private:
 			}
 
 			assert(t_len > 0);
+			assert(t_len <= max_len);
 			gp.set_address(t_addr);
 			gp.set_data_ptr(data + pos);
 			gp.set_data_length(t_len);

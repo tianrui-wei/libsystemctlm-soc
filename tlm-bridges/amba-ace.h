@@ -148,11 +148,12 @@ namespace DVM
 	enum {
 		CmdShift = 12,
 		CmdMask = 0x7,
-		CompletionShift = 12,
+		CompletionShift = 15,
 
 		CompletionBit = 1 << CompletionShift,
 
 		CmdBranchPredictorInv = 0x1,
+		CmdVirtInstCacheInv = 0x3,
 		CmdSync = 0x4,
 		CmdHint = 0x6,
 	};

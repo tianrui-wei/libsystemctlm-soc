@@ -26,6 +26,10 @@
 #ifndef TLM_BRIDGES_AMBA_H__
 #define TLM_BRIDGES_AMBA_H__
 
+#include "tlm.h"
+#include "tlm-extensions/genattr.h"
+#include <assert.h>
+
 enum {
 	AXI_OKAY = 0,
 	AXI_EXOKAY = 1,
@@ -59,12 +63,120 @@ enum {
 enum AXIVersion {
 	V_AXI4,
 	V_AXI3,
+	V_AXI4LITE,
 };
 
 enum {
 	AXI3_MAX_BURSTLENGTH = 16,
 	AXI4_MAX_BURSTLENGTH = 256,
 };
+
+/* Compute AxSize given a size in bytes.  */
+static inline int map_size_to_axsize(int size) {
+	switch (size) {
+		case 128:
+			return 7;
+		case 64:
+			return 6;
+		case 32:
+			return 5;
+		case 16:
+			return 4;
+		case 8:
+			return 3;
+		case 4:
+			return 2;
+		case 2:
+			return 1;
+		case 1:
+			return 0;
+		default:
+			return -1;
+	}
+}
+
+static inline int map_size_to_axsize_assert(int size) {
+	int r;
+
+	r = map_size_to_axsize(size);
+	assert(r != -1);
+	return r;
+}
+
+/* Compute nearest AxSize given a size in bytes.  */
+static inline int map_size_to_nearest_axsize(int size) {
+	if (size == 1)
+		return 0;
+	else if (size == 2)
+		return 1;
+	else if (size <= 4)
+		return 2;
+	else if (size <= 8)
+		return 3;
+	else if (size <= 16)
+		return 4;
+	else if (size <= 32)
+		return 5;
+	else if (size <= 64)
+		return 6;
+	else if (size <= 128)
+		return 7;
+	assert(0);
+	return -1;
+}
+
+// Update a generic payload and it's optional generic attributes
+// based on an AXI response code.
+static inline void tlm_gp_set_axi_resp(tlm::tlm_generic_payload& trans,
+				       int resp)
+{
+	genattr_extension *genattr;
+
+	trans.get_extension(genattr);
+
+	switch (resp) {
+	case AXI_EXOKAY:
+		if (genattr)
+			genattr->set_exclusive_handled();
+		// Fall-through.
+	case AXI_OKAY:
+		trans.set_response_status(tlm::TLM_OK_RESPONSE);
+		break;
+	case AXI_DECERR:
+		trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+		break;
+	case AXI_SLVERR:
+	default:
+		trans.set_response_status(tlm::TLM_GENERIC_ERROR_RESPONSE);
+		break;
+	}
+}
+
+// Dig into a generic payload and it's optional generic attributes
+// and return a derived AXI response code.
+static inline int tlm_gp_get_axi_resp(tlm::tlm_generic_payload& trans)
+{
+	genattr_extension *genattr;
+	int r;
+
+	trans.get_extension(genattr);
+
+	switch (trans.get_response_status()) {
+	case tlm::TLM_OK_RESPONSE:
+		r = AXI_OKAY;
+		if (genattr && genattr->get_exclusive_handled()) {
+			r = AXI_EXOKAY;
+		}
+		break;
+	case tlm::TLM_ADDRESS_ERROR_RESPONSE:
+		r = AXI_DECERR;
+		break;
+	default:
+		r = AXI_SLVERR;
+		break;
+	}
+	return r;
+}
 
 template<int N>
 struct __AXISignal

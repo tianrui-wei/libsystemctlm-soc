@@ -105,11 +105,6 @@ public:
 private:
 	void tx_thread()
 	{
-		//
-		// Always asserted, 13.4 [1]
-		//
-		flitpend.write(true);
-
 		while (true) {
 
 			wait(clk.posedge_event() | resetn.negedge_event());
@@ -126,7 +121,6 @@ private:
 				continue;
 			}
 
-			flitpend.write(false);
 			flitv.write(false);
 
 			if (lcrdv.read()) {
@@ -138,6 +132,11 @@ private:
 				// Collect credits but do not transmit
 				//
 				continue;
+			} else if (GetLinkState() == Run) {
+				//
+				// Always asserted, 13.4 [1]
+				//
+				flitpend.write(true);
 			}
 
 			//
@@ -170,6 +169,10 @@ private:
 
 				flitv.write(true);
 				m_credits--;
+
+				if (m_credits == 0) {
+					flitpend.write(false);
+				}
 			}
 		}
 	}
@@ -420,9 +423,15 @@ public:
 		txlinkactiveack(bridge->txlinkactiveack),
 		rxlinkactivereq(bridge->rxlinkactivereq),
 		rxlinkactiveack(bridge->rxlinkactiveack),
+		m_state(Run),
 		m_bridge(bridge)
 	{
 		SC_THREAD(state_thread);
+	}
+
+	void SetState(LinkState state)
+	{
+		m_state = state;
 	}
 
 private:
@@ -496,10 +505,16 @@ private:
 				//
 				// Always try to have link in run state
 				//
-				txlinkactivereq.write(true);
+				if (m_state == Run) {
+					txlinkactivereq.write(true);
+				}
 
 				break;
 			case Run:
+				if (m_state == Stop) {
+					deactivateTx = true;
+				}
+
 				if (deactivateTx) {
 					txlinkactivereq.write(false);
 					deactivateTx = false;
@@ -525,6 +540,8 @@ private:
 
 	sc_in<bool >&  rxlinkactivereq;
 	sc_out<bool >& rxlinkactiveack;
+
+	LinkState m_state;
 
 	T *m_bridge;
 };

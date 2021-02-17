@@ -38,13 +38,15 @@
 #include "tlm-extensions/chiattr.h"
 #include "tlm-bridges/amba-chi.h"
 #include "tlm-modules/private/chi/txnids.h"
+#include "tlm-modules/private/ccix/ccixport.h"
 
 using namespace AMBA::CHI;
 
 template<
 	int NODE_ID = 20,
 	int SLAVE_NODE_ID = 10,
-	int NUM_CHI_RN_F = 2
+	int NUM_CHI_RN_F = 2,
+	int NUM_CCIX_PORTS = 0
 	>
 class iconnect_chi :
 	public sc_core::sc_module
@@ -359,6 +361,27 @@ private:
 			return opcode >= Req::AtomicStore && opcode < Req::AtomicLoad;
 		}
 
+		bool IsAtomicLoad()
+		{
+			uint8_t opcode = m_chiattr->GetOpcode();
+
+			return opcode >= Req::AtomicLoad && opcode < Req::AtomicSwap;
+		}
+
+		bool IsAtomicCompare()
+		{
+			uint8_t opcode = m_chiattr->GetOpcode();
+
+			return opcode == Req::AtomicCompare;
+		}
+
+		bool IsAtomicSwap()
+		{
+			uint8_t opcode = m_chiattr->GetOpcode();
+
+			return opcode == Req::AtomicSwap;
+		}
+
 		bool IsAtomic()
 		{
 			uint8_t opcode = m_chiattr->GetOpcode();
@@ -634,6 +657,16 @@ private:
 				tracker->ReceivedBytes(n);
 				tracker->SetResp(chiattr->GetResp());
 
+				//
+				// Consider data as received if all data (1
+				// cache line) has been collected from 1
+				// snooped RN-F.
+				//
+				if (tracker->ReceivedData()) {
+					m_gp->set_data_length(CACHELINE_SZ);
+					m_gp->set_byte_enable_length(CACHELINE_SZ);
+				}
+
 				if (chiattr->GetOpcode() ==
 					Dat::SnpRespDataPtl) {
 					m_isSnpDataPtl = true;
@@ -666,6 +699,11 @@ private:
 		bool GotSnpData()
 		{
 			return m_gotSnpData;
+		}
+
+		bool IsSnpDataPtl()
+		{
+			return m_isSnpDataPtl;
 		}
 
 		void SetGotSnpData(bool val) { m_gotSnpData = val; }
@@ -977,6 +1015,20 @@ private:
 			m_chiattr->SetTraceTag(attr->GetTraceTag());
 		};
 
+		//
+		// This is called when routing responses.
+		//
+		RspMsg(RspMsg& rhs)
+		{
+			m_gp->deep_copy_from(rhs.GetGP());
+			m_gp->set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
+		}
+
+		RspMsg(tlm::tlm_generic_payload& gp)
+		{
+			m_gp->deep_copy_from(gp);
+		};
+
 		bool IsCompAck()
 		{
 			return m_chiattr->GetOpcode() == Rsp::CompAck;
@@ -1123,8 +1175,13 @@ private:
 			// req always have data + byte enable
 			//
 			memcpy(m_data, gp.get_data_ptr(), CACHELINE_SZ);
-			memcpy(m_byteEnable, gp.get_byte_enable_ptr(),
-					req->GetDataReceived());
+			if (req->IsAtomic()) {
+				memcpy(m_byteEnable, gp.get_byte_enable_ptr(),
+						req->GetDataReceived());
+			} else {
+				memcpy(m_byteEnable, gp.get_byte_enable_ptr(),
+						gp.get_byte_enable_length());
+			}
 
 			m_chiattr->SetQoS(attr->GetQoS());
 			m_chiattr->SetTgtID(SLAVE_NODE_ID);
@@ -1156,6 +1213,11 @@ private:
 			} else {
 				m_chiattr->SetResp(Resp::CompData_I);
 			}
+		}
+
+		bool IsCompData()
+		{
+			return m_chiattr->GetOpcode() == Dat::CompData;
 		}
 
 		bool IsCopyBackWrData()
@@ -1245,7 +1307,7 @@ private:
 				}
 
 				m_chiattr->SetNonSecure(attr->GetNonSecure());
-				m_chiattr->SetDoNotGoToSD(attr->GetDoNotGoToSD());
+				m_chiattr->SetDoNotGoToSD(GetDoNotGoToSD());
 
 				//
 				// Return cache line if it is in SC state
@@ -1256,6 +1318,21 @@ private:
 			} else {
 				m_chiattr->SetNonSecure(false);
 			}
+		}
+
+		SnpMsg(tlm::tlm_generic_payload& gp)
+		{
+			m_gp->deep_copy_from(gp);
+			m_gp->set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
+		}
+
+		//
+		// SnpMsg construction when routing the messages
+		//
+		SnpMsg(SnpMsg& rhs)
+		{
+			m_gp->deep_copy_from(rhs.GetGP());
+			m_gp->set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
 		}
 
 		uint64_t GenerateSnpDVMPacket(ReqTxn *req,
@@ -1486,6 +1563,25 @@ private:
 
 			return opcode;
 		}
+
+		bool GetDoNotGoToSD()
+		{
+			//
+			// Must be set on below snoop requests, other snoop
+			// requests are allowed or must keep it unset
+			//
+			switch(m_chiattr->GetOpcode()) {
+			case Snp::SnpUniqueFwd:
+			case Snp::SnpUnique:
+			case Snp::SnpCleanShared:
+			case Snp::SnpCleanInvalid:
+			case Snp::SnpMakeInvalid:
+				return true;
+			default:
+				break;
+			}
+			return false;
+		}
 	};
 
 	class IPacketRouter
@@ -1503,6 +1599,11 @@ private:
 		virtual void RouteDat_SN(DatMsg& dat) = 0;
 
 		virtual void RouteRsp_SN(RspMsg& rsp) = 0;
+
+		virtual void RouteSnpReq(SnpMsg& msg) = 0;
+
+		virtual void TransmitToRequestNode(RspMsg *m) = 0;
+
 	};
 
 	template<typename T>
@@ -1901,6 +2002,7 @@ private:
 		void Transmit(SnpMsg *snp) { m_txSnpChannel.Process(snp); }
 
 		uint16_t GetNodeID() { return m_nodeID; }
+		void SetNodeID(uint16_t nodeID) { m_nodeID = nodeID; }
 
 		template<typename T>
 		void connect(T& dev)
@@ -2050,6 +2152,7 @@ private:
 		void Transmit(DatMsg *dat) { m_txDatChannel.Process(dat); }
 
 		uint16_t GetNodeID() { return m_nodeID; }
+		void SetNodeID(uint16_t nodeID) { m_nodeID = nodeID; }
 
 		template<typename T>
 		void connect(T& dev)
@@ -2107,6 +2210,13 @@ private:
 		uint16_t m_nodeID;
 	};
 
+	typedef iconnect_chi<NODE_ID, SLAVE_NODE_ID,
+				NUM_CHI_RN_F, NUM_CCIX_PORTS> iconnect_chi_t;
+
+	friend class CCIX::CCIXPort<iconnect_chi_t>;
+
+	typedef CCIX::CCIXPort<iconnect_chi_t> Port_CCIX;
+
 	class IDVMOpProcessor
 	{
 	public:
@@ -2119,17 +2229,21 @@ private:
 	{
 	public:
 		TxnProcessor(Port_RN_F **port_RN_F,
+				Port_CCIX **port_CCIX,
 				Port_SN **port_SN,
 				TxnIDs *ids,
 				ReqTxn **ongoingTxn,
 				RequestOrderer *reqOrderer,
-				IDVMOpProcessor *poc) :
+				IDVMOpProcessor *poc,
+				IPacketRouter *router) :
 			m_port_RN_F(port_RN_F),
+			m_port_CCIX(port_CCIX),
 			m_port_SN(port_SN),
 			m_ids(ids),
 			m_ongoingTxn(ongoingTxn),
 			m_reqOrderer(reqOrderer),
-			m_poc(poc)
+			m_poc(poc),
+			m_router(router)
 		{}
 
 		void ProcessSnpdReq(ReqTxn *req)
@@ -2148,15 +2262,16 @@ private:
 
 				m_port_SN[0]->Transmit(wrReq);
 
-			} else if (req->GotSnpData() && req->IsSnpRead()) {
+			} else if (req->GotSnpData() && req->IsSnpRead() &&
+					!req->IsSnpDataPtl()) {
 
-				DatMsg *dat = new DatMsg(req);
+				DatMsg dat(req);
 
 				if (req->GetExpCompAck()) {
-					dat->GetCHIAttr()->SetHomeNID(NODE_ID);
-					dat->SetDBID(m_ids->GetID());
+					dat.GetCHIAttr()->SetHomeNID(NODE_ID);
+					dat.SetDBID(m_ids->GetID());
 
-					m_ongoingTxn[dat->GetDBID()] = req;
+					m_ongoingTxn[dat.GetDBID()] = req;
 
 					req->SetWaitingForCompAck(true);
 				} else {
@@ -2166,7 +2281,7 @@ private:
 					RequestDone(req);
 				}
 
-				TransmitToRequestNode(dat);
+				m_router->RouteDat(dat);
 
 			} else if (req->IsDVMOp()) {
 				RspMsg *rsp = new RspMsg(req, Rsp::Comp);
@@ -2229,25 +2344,26 @@ private:
 				m_port_SN[0]->Transmit(rdReq);
 
 			} else if (req->IsWrite() || req->IsAtomicStore()) {
-				RspMsg *rsp = new RspMsg(req, Rsp::CompDBIDResp);
+				RspMsg rsp(req, Rsp::CompDBIDResp);
 
 				// HomeNID not used, see 2.6.3 [1]
-				rsp->SetDBID(m_ids->GetID());
-				m_ongoingTxn[rsp->GetDBID()] = req;
+				rsp.SetDBID(m_ids->GetID());
+				m_ongoingTxn[rsp.GetDBID()] = req;
 
 				if (req->IsWriteUnique() && req->GetExpCompAck()) {
 					req->SetWaitingForCompAck(true);
 				}
 
-				TransmitToRequestNode(rsp);
+				m_router->RouteRsp(rsp);
+
 			} else if (req->IsDataLess()) {
-				RspMsg *rsp = new RspMsg(req, Rsp::Comp);
+				RspMsg rsp(req, Rsp::Comp);
 
 				if (req->GetExpCompAck()) {
-					rsp->GetCHIAttr()->SetHomeNID(NODE_ID);
-					rsp->SetDBID(m_ids->GetID());
+					rsp.GetCHIAttr()->SetHomeNID(NODE_ID);
+					rsp.SetDBID(m_ids->GetID());
 
-					m_ongoingTxn[rsp->GetDBID()] = req;
+					m_ongoingTxn[rsp.GetDBID()] = req;
 
 					req->SetWaitingForCompAck(true);
 				} else {
@@ -2265,19 +2381,20 @@ private:
 					RequestDone(req);
 				}
 
-				TransmitToRequestNode(rsp);
+				m_router->RouteRsp(rsp);
+
 			} else if (req->IsAtomic() || req->IsDVMOp()) {
 				//
 				// AtomicStore i handled as an IsWrite, so only
 				// the non store atomics are handled here
 				//
-				RspMsg *rsp = new RspMsg(req, Rsp::DBIDResp);
+				RspMsg rsp(req, Rsp::DBIDResp);
 
 				// HomeNID not used, see 2.6.3 [1]
-				rsp->SetDBID(m_ids->GetID());
-				m_ongoingTxn[rsp->GetDBID()] = req;
+				rsp.SetDBID(m_ids->GetID());
+				m_ongoingTxn[rsp.GetDBID()] = req;
 
-				TransmitToRequestNode(rsp);
+				m_router->RouteRsp(rsp);
 			} else {
 				RequestDone(req);
 			}
@@ -2440,10 +2557,10 @@ private:
 		//
 		void ProcessDat_SN(DatMsg& datSN)
 		{
-			DatMsg *dat = new DatMsg(datSN);
+			DatMsg dat(datSN);
 			ReqTxn *req = m_ongoingTxn[datSN.GetTxnID()];
 
-			dat->SetupNonDMT(req);
+			dat.SetupNonDMT(req);
 
 			//
 			// ReadNoSnp / ReadOnce without CompAck and atomics are
@@ -2455,9 +2572,13 @@ private:
 				m_ongoingTxn[datSN.GetTxnID()] = NULL;
 
 				RequestDone(req);
+			} else {
+				assert(!req->GetCompAckReceived());
+
+				req->SetWaitingForCompAck(true);
 			}
 
-			TransmitToRequestNode(dat);
+			m_router->RouteDat(dat);
 		}
 
 		void ProcessResp_SN(RspMsg& rsp)
@@ -2616,13 +2737,28 @@ private:
 			TransmitToRequestNode(rsp);
 		}
 
+		Port_CCIX *LookupPortCCIX(uint16_t nodeID)
+		{
+			for (int i = 0; i < NUM_CCIX_PORTS; i++) {
+				if (m_port_CCIX[i]->Contains(nodeID)) {
+					return m_port_CCIX[i];
+				}
+			}
+			return NULL;
+		}
+
 	private:
 		void UpdatePortRNFSnoopFilter(ReqTxn *req)
 		{
 			Port_RN_F *port = LookupPortRNF(req->GetSrcID());
+			Port_CCIX *port_CCIX;
 
 			if (port) {
 				port->GetSnoopFilter().Update(req);
+
+			} else if ((port_CCIX = LookupPortCCIX(req->GetSrcID()))) {
+
+				port_CCIX->UpdateSnoopFilter(req);
 			}
 		}
 
@@ -2642,6 +2778,11 @@ private:
 		Port_RN_F **m_port_RN_F;
 
 		//
+		// CCIX ports
+		//
+		Port_CCIX **m_port_CCIX;
+
+		//
 		// Slave Node port
 		//
 		Port_SN **m_port_SN;
@@ -2659,6 +2800,8 @@ private:
 
 		// IDVMOpProcessor
 		IDVMOpProcessor *m_poc;
+
+		IPacketRouter *m_router;
 	};
 
 	//
@@ -2668,31 +2811,42 @@ private:
 	{
 	public:
 		PointOfCoherence(Port_RN_F **port_RN_F,
+				Port_CCIX **port_CCIX,
 				TxnIDs *ids,
 				ReqTxn **ongoingTxn,
 				TxnProcessor& txnProcessor) :
 			m_port_RN_F(port_RN_F),
+			m_port_CCIX(port_CCIX),
 			m_ids(ids),
 			m_ongoingTxn(ongoingTxn),
-			m_txnProcessor(txnProcessor)
+			m_txnProcessor(txnProcessor),
+			m_DCT_enabled(NUM_CCIX_PORTS == 0)
 		{}
 
 		void ProcessReq(ReqTxn *req)
 		{
 			std::list<Port_RN_F*> ports;
-			typename std::list<Port_RN_F*>::iterator it;
+			std::list<Port_CCIX*> ports_CCIX;
 
-			FillPortsToSnoop(req, ports);
+			FillPortsToSnoop(req, ports, ports_CCIX);
 
-			if (ports.empty()) {
+			if (ports.empty() && ports_CCIX.empty()) {
 				m_txnProcessor.ProcessReq(req);
 			} else {
+				typename std::list<Port_RN_F*>::iterator it;
+				typename std::list<Port_CCIX*>::iterator ccixIt;
+
 				//
 				// Do DCT only to one port and Exclusive don't
 				// allow DCT 6.3.1 [1]
 				//
-				bool allowsSnpFwd =
-					ports.size() == 1 && !req->GetExcl();
+				bool allowsSnpFwd = false;
+
+				if (m_DCT_enabled) {
+					allowsSnpFwd =
+						ports.size() == 1 &&
+						!req->GetExcl();
+				}
 
 				for (it = ports.begin(); it != ports.end(); it++) {
 					SnpMsg *snp = new SnpMsg(req,
@@ -2709,6 +2863,28 @@ private:
 					m_ongoingTxn[snp->GetTxnID()] = req;
 
 					port->Transmit(snp);
+				}
+
+				//
+				// Iterate CCIX ports now
+				//
+				// allowsSnpFwd is always false when using CCIX
+				// ports
+				//
+				for (ccixIt = ports_CCIX.begin();
+					ccixIt != ports_CCIX.end(); ccixIt++) {
+
+					//
+					// Never allow SnpFwd*
+					//
+					SnpMsg snp(req, m_ids->GetID(), false);
+
+					Port_CCIX *port_CCIX = (*ccixIt);
+
+					req->WaitForSnpTxn(snp.GetTxnID());
+					m_ongoingTxn[snp.GetTxnID()] = req;
+
+					port_CCIX->Transmit(req, snp);
 				}
 			}
 		}
@@ -2732,7 +2908,9 @@ private:
 			}
 		}
 
-		void FillPortsToSnoop(ReqTxn *req, std::list<Port_RN_F*>& ports)
+		void FillPortsToSnoop(ReqTxn *req,
+					std::list<Port_RN_F*>& ports,
+					std::list<Port_CCIX*>& ports_CCIX)
 		{
 			for (int i = 0; i < NUM_CHI_RN_F; i++) {
 				Port_RN_F *port = m_port_RN_F[i];
@@ -2749,6 +2927,14 @@ private:
 					}
 				}
 			}
+
+			for (int i = 0; i < NUM_CCIX_PORTS; i++) {
+				Port_CCIX *port = m_port_CCIX[i];
+
+				if (port->NeedsSnoop(req)) {
+					ports_CCIX.push_back(port);
+				}
+			}
 		}
 
 		void ProcessResp(RspMsg& rsp)
@@ -2763,6 +2949,8 @@ private:
 				uint8_t resp = rsp.GetCHIAttr()->GetResp();
 				Port_RN_F *port =
 					m_txnProcessor.LookupPortRNF(id);
+				Port_CCIX *port_CCIX =
+					m_txnProcessor.LookupPortCCIX(id);
 				bool noFwdedData;
 				bool fwdedDataGotCompAck;
 
@@ -2771,6 +2959,8 @@ private:
 				//
 				if (port) {
 					port->GetSnoopFilter().Update(rsp, req);
+				} else if (port_CCIX) {
+					port_CCIX->UpdateSnoopFilter(rsp, req);
 				}
 
 				//
@@ -2828,6 +3018,8 @@ private:
 					uint16_t id = dat.GetSrcID();
 					Port_RN_F *port =
 						m_txnProcessor.LookupPortRNF(id);
+					Port_CCIX *port_CCIX =
+						m_txnProcessor.LookupPortCCIX(id);
 					bool noFwdedData;
 					bool fwdedDataGotCompAck;
 
@@ -2836,6 +3028,8 @@ private:
 					//
 					if (port) {
 						port->GetSnoopFilter().Update(dat, req);
+					} else if (port_CCIX) {
+						port_CCIX->UpdateSnoopFilter(dat, req);
 					}
 
 					//
@@ -2900,13 +3094,17 @@ private:
 			}
 		}
 
+		void EnableDCT(bool enable) { m_DCT_enabled = enable; }
 	private:
 		Port_RN_F **m_port_RN_F;
+		Port_CCIX **m_port_CCIX;
 
 		TxnIDs *m_ids;
 		ReqTxn **m_ongoingTxn;
 
 		TxnProcessor& m_txnProcessor;
+
+		bool m_DCT_enabled;
 	};
 
 	class ExclusiveMonitor
@@ -2970,20 +3168,133 @@ private:
 		std::list<uint8_t> m_LPIDs;
 	};
 
+	class SystemAddressMap
+	{
+	public:
+		void AddMap(uint64_t startAddress,
+				unsigned int regionLength,
+				uint16_t TgtID)
+		{
+			uint64_t endAddress = startAddress + regionLength;
+
+			m_maps.push_back(AddressMap(startAddress,
+							endAddress,
+							TgtID));
+		}
+
+		void AddPrefetchTgtMap(uint64_t startAddress,
+					unsigned int regionLength,
+					uint16_t TgtID)
+		{
+			uint64_t endAddress = startAddress + regionLength;
+
+			m_prefetchTgt.push_back(AddressMap(startAddress,
+								endAddress,
+								TgtID));
+		}
+
+		void UpdateTgtID(ReqTxn *req)
+		{
+			//
+			// See 3.3.1 about PrefetchTgt and DVMOp
+			//
+			// Forwarding DVMOp reqs are not supported yet.
+			//
+			if (req->GetOpcode() == Req::PrefetchTgt) {
+
+				//
+				// PrefetchTgt maps
+				//
+				IterateMaps(m_prefetchTgt, req);
+
+			} else if (!req->IsDVMOp()) {
+				//
+				// All other reqs
+				//
+				IterateMaps(m_maps, req);
+			}
+		}
+
+	private:
+		class AddressMap
+		{
+		public:
+			AddressMap(uint64_t startAddress,
+					uint64_t endAddress, uint16_t TgtID) :
+				m_startAddress(startAddress),
+				m_endAddress(endAddress),
+				m_TgtID(TgtID)
+			{}
+
+			bool InRegion(uint64_t addr)
+			{
+				return addr >= m_startAddress &&
+					addr < m_endAddress;
+			}
+
+			uint16_t GetTgtID() { return m_TgtID; }
+
+		private:
+			uint64_t m_startAddress;
+			uint64_t m_endAddress;
+			uint16_t m_TgtID;
+		};
+
+		void IterateMaps(std::vector<AddressMap>& maps, ReqTxn *req)
+		{
+			typename std::vector<AddressMap>::iterator it;
+
+			for (it = maps.begin(); it != maps.end(); it++) {
+				AddressMap& map = (*it);
+
+				if (map.InRegion(req->GetAddress())) {
+					uint16_t tgtID = map.GetTgtID();
+
+					//
+					// Update TgtID
+					//
+					req->GetCHIAttr()->SetTgtID(tgtID);
+				}
+			}
+		}
+
+		std::vector<AddressMap> m_maps;
+		std::vector<AddressMap> m_prefetchTgt;
+	};
+
 	class PacketRouter :
 		public IPacketRouter
 	{
 	public:
 
-		PacketRouter(PointOfCoherence& poc,
+		PacketRouter(SystemAddressMap& sam,
+				PointOfCoherence& poc,
 				TxnProcessor& txnProcessor,
-				Port_RN_F **port_RN_F) :
+				Port_RN_F **port_RN_F,
+				Port_CCIX **port_CCIX) :
+			m_sam(sam),
 			m_poc(poc),
 			m_txnProcessor(txnProcessor),
-			m_port_RN_F(port_RN_F)
+			m_port_RN_F(port_RN_F),
+			m_port_CCIX(port_CCIX)
 		{}
 
 		void RouteReq(ReqTxn *req)
+		{
+			Port_CCIX *port_CCIX;
+
+			m_sam.UpdateTgtID(req);
+
+			port_CCIX = LookupPortCCIX(req->GetTgtID());
+
+			if (port_CCIX) {
+				port_CCIX->ProcessReq(req);
+			} else {
+				RouteInternal(req);
+			}
+		}
+
+		void RouteInternal(ReqTxn *req)
 		{
 			bool exclusivePassed = true;
 
@@ -2995,7 +3306,7 @@ private:
 				m_txnProcessor.TransmitReadReceipt(req);
 			}
 
-			if (req->GetExcl()) {
+			if (!req->IsAtomic() && req->GetExcl()) {
 				exclusivePassed = m_exmon.HandleExclusive(req);
 			}
 
@@ -3013,6 +3324,7 @@ private:
 		void RouteDat(DatMsg& dat)
 		{
 			Port_RN_F *port_RN_F;
+			Port_CCIX *port_CCIX;
 
 			if (dat.GetTgtID() == NODE_ID) {
 				bool isSnpResp = dat.IsSnpRespData() ||
@@ -3027,17 +3339,31 @@ private:
 			} else if ((port_RN_F = LookupPortRNF(dat.GetTgtID()))) {
 
 				port_RN_F->Transmit(new DatMsg(dat));
+
+			} else if ((port_CCIX = LookupPortCCIX(dat.GetTgtID()))) {
+
+				port_CCIX->ProcessDat(dat);
 			}
 		}
 
 		void RouteRsp(RspMsg& rsp)
 		{
+			Port_CCIX *port_CCIX;
+			Port_RN_F *port_RN_F;
+
 			if (rsp.GetTgtID() == NODE_ID) {
 				if (rsp.IsSnpResp() || rsp.IsSnpRespFwded()) {
 					m_poc.ProcessResp(rsp);
 				} else {
 					m_txnProcessor.ProcessResp(rsp);
 				}
+			} else if ((port_RN_F = LookupPortRNF(rsp.GetTgtID()))) {
+
+				port_RN_F->Transmit(new RspMsg(rsp));
+
+			} else if ((port_CCIX = LookupPortCCIX(rsp.GetTgtID()))) {
+
+				port_CCIX->ProcessResp(rsp);
 			}
 		}
 
@@ -3058,6 +3384,22 @@ private:
 			m_txnProcessor.ProcessResp_SN(rsp);
 		}
 
+		void TransmitToRequestNode(RspMsg *t)
+		{
+			Port_RN_F *port = LookupPortRNF(t->GetTgtID());
+
+			if (port) {
+				port->Transmit(t);
+			}
+		}
+
+		void RouteSnpReq(SnpMsg& msg)
+		{
+			for (int i = 0; i < NUM_CHI_RN_F; i++) {
+				m_port_RN_F[i]->Transmit(new SnpMsg(msg));
+			}
+		}
+
 	private:
 		Port_RN_F *LookupPortRNF(uint16_t nodeID)
 		{
@@ -3069,10 +3411,21 @@ private:
 			return NULL;
 		}
 
+		Port_CCIX *LookupPortCCIX(uint16_t nodeID)
+		{
+			for (int i = 0; i < NUM_CCIX_PORTS; i++) {
+				if (m_port_CCIX[i]->Contains(nodeID)) {
+					return m_port_CCIX[i];
+				}
+			}
+			return NULL;
+		}
 
+		SystemAddressMap& m_sam;
 		PointOfCoherence& m_poc;
 		TxnProcessor& m_txnProcessor;
 		Port_RN_F **m_port_RN_F;
+		Port_CCIX **m_port_CCIX;
 		ExclusiveMonitor m_exmon;
 	};
 
@@ -3082,12 +3435,15 @@ private:
 
 	TxnProcessor m_txnProcessor;
 	PointOfCoherence m_poc;
+	SystemAddressMap m_sam;
 	PacketRouter m_router;
 
 public:
 
 	Port_RN_F *port_RN_F[NUM_CHI_RN_F];
 	Port_SN   *port_SN;
+
+	Port_CCIX *port_CCIX[NUM_CCIX_PORTS];
 
 	SC_HAS_PROCESS(iconnect_chi);
 
@@ -3098,20 +3454,25 @@ public:
 				&m_router),
 
 		m_txnProcessor(port_RN_F,
+				port_CCIX,
 				&port_SN,
 				&m_ids,
 				m_ongoingTxn,
 				&m_reqOrderer,
-				&m_poc),
+				&m_poc,
+				&m_router),
 
 		m_poc(port_RN_F,
+			port_CCIX,
 			&m_ids,
 			m_ongoingTxn,
 			m_txnProcessor),
 
-		m_router(m_poc,
+		m_router(m_sam,
+			m_poc,
 			m_txnProcessor,
-			port_RN_F)
+			port_RN_F,
+			port_CCIX)
 	{
 		for (int portID = 0; portID < NUM_CHI_RN_F; portID++) {
 			std::ostringstream name;
@@ -3126,10 +3487,27 @@ public:
 
 		port_SN = new Port_SN("Port-SN", &m_router, SLAVE_NODE_ID);
 
+		for (int portID = 0; portID < NUM_CCIX_PORTS; portID++) {
+			std::ostringstream name;
+
+			name << "port-CCIX" << portID;
+
+			port_CCIX[portID] = new Port_CCIX(name.str().c_str(),
+							NODE_ID,
+							&m_router,
+							&m_reqOrderer,
+							&m_ids,
+							m_ongoingTxn);
+		}
+
 		memset(m_ongoingTxn,
 			0x0,
 			TxnIDs::NumIDs * sizeof(m_ongoingTxn[0]));
 	}
+
+	void EnableDCT(bool enable) { m_poc.EnableDCT(enable); }
+
+	SystemAddressMap& SystemAddressMap() { return m_sam; }
 
 	virtual ~iconnect_chi()
 	{
@@ -3137,6 +3515,9 @@ public:
 			delete port_RN_F[i];
 		}
 		delete port_SN;
+		for (int i = 0; i < NUM_CCIX_PORTS; i++) {
+			delete port_CCIX[i];
+		}
 	}
 };
 

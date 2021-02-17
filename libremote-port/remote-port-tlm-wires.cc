@@ -49,7 +49,9 @@ remoteport_tlm_wires::remoteport_tlm_wires(sc_module_name name,
 					   unsigned int nr_wires_in,
 					   unsigned int nr_wires_out,
 					   bool posted_updates)
-        : sc_module(name)
+        : sc_module(name),
+	  wires_in("wires-in", nr_wires_in),
+	  wires_out("wires-out", nr_wires_out)
 {
 	unsigned int i;
 
@@ -60,40 +62,35 @@ remoteport_tlm_wires::remoteport_tlm_wires(sc_module_name name,
 	wire_name = name;
 
 	if (nr_wires_in) {
-		wires_in = new sc_in<bool>[nr_wires_in];
 		SC_THREAD(wire_update);
 
 		for (i = 0; i < nr_wires_in; i++) {
 			sensitive << wires_in[i];
 		}
 	}
-
-	if (nr_wires_out) {
-		wires_out = new sc_out<bool>[nr_wires_out];
-	}
 }
 
-
-void remoteport_tlm_wires::cmd_interrupt(struct rp_pkt &pkt, bool can_sync)
+void remoteport_tlm_wires::cmd_interrupt_null(remoteport_tlm *adaptor,
+						struct rp_pkt &pkt,
+						bool can_sync,
+						remoteport_tlm_wires *dev)
 {
 	struct rp_pkt lpkt = pkt;
 
 	adaptor->sync->pre_wire_cmd(pkt.sync.timestamp, can_sync);
 
-	assert(lpkt.hdr.dev == dev_id);
-//	printf("wires_out[%d]=%d\n", lpkt.interrupt.line,lpkt.interrupt.val);
-	assert(lpkt.interrupt.line < cfg.nr_wires_out);
-	wires_out[lpkt.interrupt.line].write(lpkt.interrupt.val);
+	if (dev) {
+		dev->interrupt_action(pkt);
+	}
 
 	if (adaptor->peer.caps.wire_posted_updates
 	    && !(lpkt.hdr.flags & RP_PKT_FLAGS_posted)) {
 		int64_t clk;
 		size_t plen;
-		unsigned int id = lpkt.hdr.id;
 
 	        clk = adaptor->rp_map_time(adaptor->sync->get_current_time());
 		plen = rp_encode_interrupt_f(lpkt.hdr.id,
-					     dev_id,
+					     lpkt.hdr.dev,
 					     &lpkt.interrupt,
 					     clk, lpkt.interrupt.line,
 					     0, lpkt.interrupt.val,
@@ -102,6 +99,19 @@ void remoteport_tlm_wires::cmd_interrupt(struct rp_pkt &pkt, bool can_sync)
 	}
 
 	adaptor->sync->post_wire_cmd(pkt.sync.timestamp, can_sync);
+}
+
+void remoteport_tlm_wires::interrupt_action(struct rp_pkt &pkt)
+{
+	assert(pkt.hdr.dev == dev_id);
+	assert(pkt.interrupt.line < cfg.nr_wires_out);
+
+	wires_out[pkt.interrupt.line].write(pkt.interrupt.val);
+}
+
+void remoteport_tlm_wires::cmd_interrupt(struct rp_pkt &pkt, bool can_sync)
+{
+	cmd_interrupt_null(adaptor, pkt, can_sync, this);
 }
 
 void remoteport_tlm_wires::wire_update(void)

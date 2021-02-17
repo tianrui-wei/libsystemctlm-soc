@@ -21,7 +21,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-include ../.config.mk
+-include ../.config.mk
 
 SUBDIRS_EXAMPLES += example-rtl-axi4
 SUBDIRS_EXAMPLES += example-rtl-axi4lite
@@ -29,19 +29,28 @@ SUBDIRS_EXAMPLES += example-rtl-mixed
 
 SUBDIRS += $(SUBDIRS_EXAMPLES)
 SUBDIRS += tlm-modules
-SUBDIRS += traffic-generators/config-parser/
 SUBDIRS += traffic-generators/axi/
-SUBDIRS += traffic-generators/axi/cp-tg/
 SUBDIRS += traffic-generators/axilite/
-SUBDIRS += traffic-generators/axilite/cp-tg/
 SUBDIRS += traffic-generators/axis/
 SUBDIRS += traffic-generators/ace/
 SUBDIRS += traffic-generators/chi/
+SUBDIRS += traffic-generators/ccix/
 SUBDIRS += checkers/axi
 SUBDIRS += checkers/axilite
 SUBDIRS += checkers/ace
 SUBDIRS += checkers/acelite
 SUBDIRS += checkers/chi
+SUBDIRS += rtl-bridges/axi
+SUBDIRS += rtl-bridges/ace
+SUBDIRS += rtl-bridges/chi
+SUBDIRS += rtl-bridges/cxs
+SUBDIRS += rtl-bridges/pcie
+
+ifeq "$(HAVE_CONFIG_PARSER)" "y"
+SUBDIRS += traffic-generators/config-parser/
+SUBDIRS += traffic-generators/axi/cp-tg/
+SUBDIRS += traffic-generators/axilite/cp-tg/
+endif
 
 PYTEST ?=py.test
 PYTEST_HTML_ARGS ?=--self-contained-html --html=report.html
@@ -69,3 +78,4 @@ $(SUBDIRS:%=%-clean):
 	$(MAKE) -C $(@:-clean=) clean
 
 clean: $(SUBDIRS:%=%-clean)
+	$(RM) -r pysimgen

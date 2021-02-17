@@ -262,7 +262,7 @@ public:
 
 	bool IsReqLCrdReturn()
 	{
-		return m_Opcode == Req::ReqLCrdReturn;
+		return m_Opcode == Req::ReqLCrdReturn && m_TxnID == 0;
 	}
 private:
 
@@ -498,6 +498,11 @@ public:
 
 	}
 
+	bool IsLCrdReturn()
+	{
+		return m_Opcode == Rsp::RespLCrdReturn && m_TxnID == 0;
+	}
+
 private:
 	template<typename T>
 	T Extract(sc_bv<FLIT_WIDTH>& flit, unsigned int width)
@@ -567,7 +572,6 @@ public:
 	//
 	enum {
 		QoS_Width 	= Snp::QoS_Width,
-		TgtID_Width 	= NODEID_WIDTH,
 		SrcID_Width 	= NODEID_WIDTH,
 		TxnID_Width 	= Snp::TxnID_Width,
 		FwdNID_Width 	= NODEID_WIDTH,
@@ -585,7 +589,6 @@ public:
 		// Sum of above
 		FLIT_WIDTH =
 			QoS_Width +
-			TgtID_Width +
 			SrcID_Width +
 			TxnID_Width +
 			FwdNID_Width +
@@ -647,7 +650,7 @@ public:
 
 	bool IsLCrdReturn()
 	{
-		return m_Opcode == Snp::SnpLCrdReturn;
+		return m_Opcode == Snp::SnpLCrdReturn && m_TxnID == 0;
 	}
 
 	uint8_t GetOpcode() { return m_Opcode; }
@@ -734,7 +737,8 @@ template<
 	int NODEID_WIDTH,
 	int RSVDC_WIDTH,
 	int DATACHECK_WIDTH,
-	int POISON_WIDTH>
+	int POISON_WIDTH,
+	int DAT_OPCODE_WIDTH>
 class DatFlit
 {
 public:
@@ -747,7 +751,7 @@ public:
 		SrcID_Width 	= NODEID_WIDTH,
 		TxnID_Width 	= Dat::TxnID_Width,
 		HomeNID_Width 	= NODEID_WIDTH,
-		Opcode_Width 	= Dat::Opcode_Width,
+		Opcode_Width 	= DAT_OPCODE_WIDTH,
 		RespErr_Width 	= Dat::RespErr_Width,
 		Resp_Width 	= Dat::Resp_Width,
 
@@ -857,6 +861,11 @@ public:
 			<< ", m_Poison: 0x" << static_cast<uint32_t>(m_Poison)
 
 			<< " } ";
+	}
+
+	bool IsLCrdReturn()
+	{
+		return m_Opcode == Dat::DataLCrdReturn && m_TxnID == 0;
 	}
 
 private:

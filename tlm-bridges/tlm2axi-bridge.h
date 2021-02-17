@@ -308,7 +308,11 @@ private:
 				m_burstType = AXI_BURST_INCR;
 			} else if (streaming_width == DATA_BUS_BYTES) {
 				m_burstType = AXI_BURST_FIXED;
-			} else if (streaming_width < DATA_BUS_BYTES) {
+			} else if (streaming_width < DATA_BUS_BYTES &&
+				   m_genattr.get_burst_width() >= streaming_width) {
+				m_burstType = AXI_BURST_FIXED;
+			} else if (streaming_width < DATA_BUS_BYTES &&
+				   m_genattr.get_burst_width() == 0) {
 				//
 				// Specify this with burst_width if streaming
 				// width is less than the data bus width
@@ -331,9 +335,16 @@ private:
 			unsigned int dataLen = m_gp.get_data_length();
 			uint32_t burst_width = GetBurstWidth();
 			uint64_t alignedAddress;
+			unsigned int alignment;
 
 			alignedAddress = (address / burst_width) * burst_width;
-			dataLen += address - alignedAddress;
+			alignment = address - alignedAddress;
+
+			if (m_burstType == AXI_BURST_FIXED) {
+				burst_width -= alignment;
+			} else {
+				dataLen += alignment;
+			}
 
 			m_numBeats = (dataLen + burst_width - 1) / burst_width;
 		}
@@ -358,30 +369,6 @@ private:
 		uint32_t GetAxID() { return m_genattr.get_transaction_id(); }
 
 		uint64_t GetAddress() { return m_gp.get_address(); }
-
-		uint8_t GetAxSize()
-		{
-			switch (GetBurstWidth()) {
-			case 128:
-				return 7;
-			case 64:
-				return 6;
-			case 32:
-				return 5;
-			case 16:
-				return 4;
-			case 8:
-				return 3;
-			case 4:
-				return 2;
-			case 2:
-				return 1;
-			case 1:
-			default:
-				return 0;
-				break;
-			}
-		}
 
 		uint8_t GetAxProt()
 		{
@@ -435,21 +422,11 @@ private:
 
 		void IncBeat() { m_beat++; }
 
+		bool IsFirstBeat() { return m_beat == 1; }
+
 		bool IsLastBeat() { return m_beat == m_numBeats; }
 
 		bool IsExclusive() { return m_genattr.get_exclusive(); }
-		void SetExclusiveHandled()
-		{
-			genattr_extension *genattr;
-
-			m_gp.get_extension(genattr);
-
-			assert(genattr);
-
-			if (genattr) {
-				genattr->set_exclusive_handled(true);
-			}
-		}
 
 		sc_event& DoneEvent() { return m_done; }
 
@@ -496,7 +473,7 @@ private:
 		uint32_t m_numBeats;
 	};
 
-	int prepare_wbeat(Transaction *tr, unsigned int offset);
+	int prepare_wbeat(Transaction *tr, unsigned int offset, unsigned int data_offset);
 
 	bool validate(uint64_t t_addr,
 			unsigned int t_len,
@@ -656,6 +633,8 @@ private:
 
 	bool read_address_phase(Transaction *rt)
 	{
+		int axsize = map_size_to_axsize_assert(rt->GetBurstWidth());
+
 		if (reset_asserted()) {
 			arvalid.write(false);
 			return false;
@@ -663,7 +642,7 @@ private:
 
 		araddr.write(rt->GetAddress());
 		arprot.write(rt->GetAxProt());
-		arsize.write(rt->GetAxSize());
+		arsize.write(axsize);
 		arlen.write(rt->GetNumBeats() - 1);
 		arburst.write(rt->GetBurstType());
 		arid.write(rt->GetAxID());
@@ -714,6 +693,8 @@ private:
 
 	bool write_address_phase(Transaction *wt)
 	{
+		int axsize = map_size_to_axsize_assert(wt->GetBurstWidth());
+
 		if (reset_asserted()) {
 			awvalid.write(false);
 			return false;
@@ -721,7 +702,7 @@ private:
 
 		awaddr.write(wt->GetAddress());
 		awprot.write(wt->GetAxProt());
-		awsize.write(wt->GetAxSize());
+		awsize.write(axsize);
 		awlen.write(wt->GetNumBeats() - 1);
 		awburst.write(wt->GetBurstType());
 		awid.write(wt->GetAxID());
@@ -816,6 +797,7 @@ private:
 			uint64_t data64 = 0;
 			unsigned int bitoffset = 0;
 			unsigned int pos = 0;
+			unsigned int addr_pos = 0;
 			unsigned int streaming_width = 0;
 
 			while (len || tr == NULL) {
@@ -866,18 +848,26 @@ private:
 						break;
 					}
 
-					addr = trans->get_address() + (pos % streaming_width);
+					addr = trans->get_address() + (addr_pos % streaming_width);
 					bitoffset = (addr * 8) % DATA_WIDTH;
 					readlen = (DATA_WIDTH - bitoffset) / 8;
 					readlen = readlen <= len ? readlen : len;
 					// Respect the genattr burstwidh attribute
 					readlen = readlen <= tr->GetBurstWidth() ? readlen : tr->GetBurstWidth();
+					if (tr->GetBurstType() == AXI_BURST_FIXED ||
+					    tr->IsFirstBeat()) {
+						unsigned int t;
+
+						// For narrow bursts, the lanes need to be aligned.
+						t = addr & (tr->GetBurstWidth() - 1);
+						t = tr->GetBurstWidth() - t;
+						readlen = readlen > t ? t : readlen;
+					}
 
 					for (w = 0; w < readlen; w += sizeof data64) {
 						unsigned int copylen = readlen - w;
 
 						copylen = copylen <= sizeof data64 ? copylen : sizeof data64;
-
 						data128 = rdata.read() >> (w * 8 + bitoffset);
 						data64 = data128.to_uint64();
 
@@ -899,6 +889,9 @@ private:
 						D(printf("Read addr=%x data64=%lx len=%d readlen=%d pos=%d w=%d sw=%d ofset=%d, copylen=%d\n",
 							addr, data64, len, readlen, pos, w, streaming_width,
 							(w * 8 + bitoffset), copylen));
+						if (tr->GetBurstType() != AXI_BURST_FIXED) {
+							addr_pos += copylen;
+						}
 						pos += copylen;
 						len -= copylen;
 					}
@@ -917,23 +910,7 @@ private:
 			if (resetn.read() == true) {
 				uint64_t resp = rresp.read().to_uint64();
 
-				switch (resp & 0x3) {
-				case AXI_EXOKAY:
-					assert(tr->IsExclusive());
-					tr->SetExclusiveHandled();
-					// Fallthrough to set response
-				case AXI_OKAY:
-					trans->set_response_status(tlm::TLM_OK_RESPONSE);
-					break;
-				case AXI_DECERR:
-					D(printf("DECERR\n"));
-					trans->set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
-					break;
-				case AXI_SLVERR:
-					D(printf("SLVERR\n"));
-					trans->set_response_status(tlm::TLM_GENERIC_ERROR_RESPONSE);
-					break;
-				}
+				tlm_gp_set_axi_resp(*trans, resp & 3);
 
 				if (ACE_MODE == ACE_MODE_ACE) {
 					if (m_snp_chnls->ExtractIsShared(resp)) {
@@ -977,7 +954,7 @@ private:
 			Transaction *tr = wrDataFifo.read();
 			tlm::tlm_generic_payload& trans = tr->GetGP();
 			unsigned int len = trans.get_data_length();
-			unsigned int pos = 0;
+			unsigned int pos = 0, addr_pos = 0;
 
 			//
 			// Start the data transfer if not in reset. ACE write
@@ -985,7 +962,13 @@ private:
 			//
 			if (!reset_asserted() && tr->hasData()) {
 				while (pos < len) {
-					pos += prepare_wbeat(tr, pos);
+					unsigned int d;
+
+					d = prepare_wbeat(tr, addr_pos, pos);
+					pos += d;
+					if (tr->GetBurstType() != AXI_BURST_FIXED) {
+						addr_pos += d;
+					}
 
 					wlast.write(tr->IsLastBeat());
 
@@ -1048,26 +1031,8 @@ private:
 					"with an unexpected transaction ID");
 			}
 
-			tlm::tlm_generic_payload& trans = tr->GetGP();
-
-			// Set TLM response
-			switch (bresp.read().to_uint64()) {
-			case AXI_EXOKAY:
-				assert(tr->IsExclusive());
-				tr->SetExclusiveHandled();
-				// Fallthrough to set response
-			case AXI_OKAY:
-				trans.set_response_status(tlm::TLM_OK_RESPONSE);
-				break;
-			case AXI_DECERR:
-				D(printf("DECERR\n"));
-				trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
-				break;
-			case AXI_SLVERR:
-				D(printf("SLVERR\n"));
-				trans.set_response_status(tlm::TLM_GENERIC_ERROR_RESPONSE);
-				break;
-			}
+			tlm_gp_set_axi_resp(tr->GetGP(),
+					bresp.read().to_uint64());
 
 			if (ACE_MODE == ACE_MODE_ACE) {
 				wack.write(true);
@@ -1275,7 +1240,7 @@ int tlm2axi_bridge<ADDR_WIDTH,
 		ACE_MODE,
 		CD_DATA_WIDTH,
 		CACHELINE_SZ>
-::prepare_wbeat(Transaction *tr, unsigned int offset)
+::prepare_wbeat(Transaction *tr, unsigned int offset, unsigned int data_offset)
 {
 	tlm::tlm_generic_payload& trans = tr->GetGP();
 	unsigned int streaming_width = trans.get_streaming_width();
@@ -1293,8 +1258,8 @@ int tlm2axi_bridge<ADDR_WIDTH,
 
 	assert(streaming_width);
 	addr += (offset % streaming_width);
-	data += offset;
-	len -= offset;
+	data += data_offset;
+	len -= data_offset;
 
 	bitoffset = (addr * 8) % DATA_WIDTH;
 	maxlen = (DATA_WIDTH - bitoffset) / 8;
@@ -1304,6 +1269,17 @@ int tlm2axi_bridge<ADDR_WIDTH,
 	wlen = len <= maxlen ? len : maxlen;
 	// Respect the genattr burstwidh attribute
 	wlen = wlen <= tr->GetBurstWidth() ? wlen : tr->GetBurstWidth();
+
+	if (tr->GetBurstType() == AXI_BURST_FIXED || tr->IsFirstBeat()) {
+		unsigned int t;
+
+		// For narrow bursts, the lanes need to be aligned.
+		t = addr & (tr->GetBurstWidth() - 1);
+		t = tr->GetBurstWidth() - t;
+		D(printf("realign wlen=%d t=%d bw=%d offset=%d\n",
+			wlen, t, tr->GetBurstWidth(), offset));
+		wlen = wlen > t ? t : wlen;
+	}
 
 	D(printf("WBEAT: pos=%d wlen=%d bitoffset=%d\n", offset, wlen, bitoffset));
 

@@ -22,6 +22,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+#ifndef REMOTE_PORT_TLM_MEMORY_MASTER
+#define REMOTE_PORT_TLM_MEMORY_MASTER
 
 class remoteport_tlm_memory_master
 	: public sc_module, public remoteport_tlm_dev
@@ -33,6 +35,19 @@ public:
 		: sc_module(name)
 	{
 	}
+
+	static void cmd_write_null(remoteport_tlm *adaptor,
+				struct rp_pkt &pkt,
+				bool can_sync,
+				unsigned char *data,
+				size_t len,
+				remoteport_tlm_memory_master *dev);
+
+	static void cmd_read_null(remoteport_tlm *adaptor,
+				struct rp_pkt &pkt,
+				bool can_sync,
+				remoteport_tlm_memory_master *dev);
+
 	void cmd_write(struct rp_pkt &pkt, bool can_sync, unsigned char *data, size_t len);
 	void cmd_read(struct rp_pkt &pkt, bool can_sync);
 	void tie_off(void);
@@ -40,8 +55,9 @@ public:
 private:
 	tlm_utils::simple_target_socket<remoteport_tlm_memory_master> *tieoff_sk;
 
-	sc_time rp_bus_access(struct rp_pkt &pkt,
-                                   bool can_sync,
+	void rp_bus_access(struct rp_pkt &pkt,
                                    tlm::tlm_command cmd,
                                    unsigned char *data, size_t len);
 };
+
+#endif

@@ -31,25 +31,34 @@
 using namespace sc_core;
 using namespace std;
 
-#define MIN(a, b) (a) > (b) ? (b) : (a)
+#define MIN(a, b) ((a) > (b) ? (b) : (a))
 
 #include "memory.h"
 
-memory::memory(sc_module_name name, sc_time latency, int size_)
-	: sc_module(name), socket("socket"), LATENCY(latency)
+memory::memory(sc_module_name name, sc_time latency, int size_,
+	       uint8_t *buf)
+	: sc_module(name), socket("socket"), LATENCY(latency),
+	  mem(buf),
+	  free_mem(false)
 {
 	socket.register_b_transport(this, &memory::b_transport);
 	socket.register_get_direct_mem_ptr(this, &memory::get_direct_mem_ptr);
 	socket.register_transport_dbg(this, &memory::transport_dbg);
 
 	size = size_;
-	mem = new uint8_t[size];
-	memset(&mem[0], 0, size);
+
+	if (mem == NULL) {
+		mem = new uint8_t[size];
+		memset(&mem[0], 0, size);
+		free_mem = true;
+	}
 }
 
 memory::~memory()
 {
-	delete[] mem;
+	if (free_mem) {
+		delete[] mem;
+	}
 }
 
 void memory::b_transport(tlm::tlm_generic_payload& trans, sc_time& delay)
@@ -66,12 +75,6 @@ void memory::b_transport(tlm::tlm_generic_payload& trans, sc_time& delay)
 		streaming_width = len;
 	}
 
-	if ((addr + MIN(len, streaming_width)) > sc_dt::uint64(size)) {
-		trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
-		SC_REPORT_FATAL("Memory", "Unsupported access\n");
-		return;
-	}
-
 	if (be_len || streaming_width) {
 		// Slow path.
 		unsigned int pos;
@@ -83,6 +86,12 @@ void memory::b_transport(tlm::tlm_generic_payload& trans, sc_time& delay)
 				do_access = be[pos % be_len] == TLM_BYTE_ENABLED;
 			}
 			if (do_access) {
+				if ((addr + (pos % streaming_width)) >= sc_dt::uint64(size))   {
+					trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+					SC_REPORT_FATAL("Memory", "Unsupported access\n");
+					return;
+				}
+
 				if (trans.is_read()) {
 					ptr[pos] = mem[addr + (pos % streaming_width)];
 				} else {
@@ -91,6 +100,12 @@ void memory::b_transport(tlm::tlm_generic_payload& trans, sc_time& delay)
 			}
 		}
 	} else {
+		if ((addr + len) > sc_dt::uint64(size)) {
+			trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+			SC_REPORT_FATAL("Memory", "Unsupported access\n");
+			return;
+		}
+
 		if (trans.get_command() == tlm::TLM_READ_COMMAND)
 			memcpy(ptr, &mem[addr], len);
 		else if (cmd == tlm::TLM_WRITE_COMMAND)

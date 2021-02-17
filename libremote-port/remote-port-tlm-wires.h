@@ -22,6 +22,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+#ifndef REMOTE_PORT_TLM_WIRES
+#define REMOTE_PORT_TLM_WIRES
 
 class remoteport_tlm_wires
 	: public sc_module, public remoteport_tlm_dev
@@ -35,18 +37,24 @@ public:
 	void cmd_interrupt(struct rp_pkt &pkt, bool can_sync);
 	void tie_off(void);
 
-	sc_in<bool> *wires_in;
-	sc_out<bool> *wires_out;
+	sc_vector<sc_in<bool> > wires_in;
+	sc_vector<sc_out<bool> > wires_out;
 
-	const char *wire_name;
-
-	void wire_update(void);
+	static void cmd_interrupt_null(remoteport_tlm *adaptor,
+					struct rp_pkt &pkt,
+					bool can_sync,
+					remoteport_tlm_wires *dev);
 private:
+	void interrupt_action(struct rp_pkt &pkt);
 
 	struct {
 		unsigned int nr_wires_in;
 		unsigned int nr_wires_out;
 		bool posted_updates;
 	} cfg;
+
+	const char *wire_name;
+	void wire_update(void);
 };
 
+#endif

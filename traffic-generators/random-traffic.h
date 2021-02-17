@@ -30,6 +30,10 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
+#ifndef MAX
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#endif
+
 class RandomTraffic : public ITrafficDesc
 {
 public:
@@ -40,17 +44,21 @@ public:
 			uint32_t maxDataLen,
 			uint32_t maxByteEnablesLen,
 			uint32_t numTransfers,
-			unsigned int seed = 0) :
+			unsigned int seed = 0,
+			bool initMemory = false) :
 		m_minAddress(minAddress),
 		m_maxAddress(maxAddress),
 		m_addressMask(addressMask),
 		m_minDataLen(minDataLen),
 		m_maxDataLen(maxDataLen),
+		m_minStreamingWidthLen(0),
+		m_maxStreamingWidthLen(maxDataLen),
 		m_maxByteEnablesLen(maxByteEnablesLen),
-		m_data(new uint8_t[maxDataLen]),
+		m_data(new uint8_t[MAX(maxDataLen, maxAddress - minAddress)]),
 		m_byte_enables(new uint8_t[maxDataLen]),
 		m_numTransfers(numTransfers),
 		m_last_write(false),
+		m_initMemory(initMemory),
 		m_seed(seed),
 		hasAddrLen(false)
 	{}
@@ -58,6 +66,7 @@ public:
 	~RandomTraffic()
 	{
 		delete[] m_data;
+		delete[] m_byte_enables;
 	}
 
 	virtual tlm::tlm_command getCmd()
@@ -71,6 +80,10 @@ public:
 
 		cmd = (rand_r(&m_seed) % 2) ?
 			tlm::TLM_WRITE_COMMAND : tlm::TLM_READ_COMMAND;
+
+		if (m_initMemory) {
+			cmd = tlm::TLM_WRITE_COMMAND;
+		}
 
 		m_last_write = cmd == tlm::TLM_WRITE_COMMAND;
 		return cmd;
@@ -89,6 +102,11 @@ public:
 
 		if (!hasAddrLen)
 			genAddrLen();
+
+		if (m_initMemory) {
+			memset(m_data, 0, len);
+			return m_data;
+		}
 
 		// FIXME: Do something faster?
 		for (i = 0; i < len; i++) {
@@ -147,10 +165,20 @@ public:
 			sw_len = len;
 		}
 		m_numTransfers--;
+		m_initMemory = false;
 	}
 
 	void setSeed(unsigned int seed) { m_seed = seed; }
 	unsigned int getSeed() { return m_seed; }
+
+	void setMinStreamingWidthLen(uint32_t len) { m_minStreamingWidthLen = len; }
+	uint32_t getMinStreamingWidthLen(void) { return m_minStreamingWidthLen; }
+
+	void setMaxStreamingWidthLen(uint32_t len) { m_maxStreamingWidthLen = len; }
+	uint32_t getMaxStreamingWidthLen(void) { return m_maxStreamingWidthLen; }
+
+	void setInitMemory(bool v) { m_initMemory = v; }
+	bool getInitMemory(void) { return m_initMemory; }
 
 private:
 	uint64_t m_minAddress;
@@ -158,11 +186,14 @@ private:
 	uint64_t m_addressMask;
 	uint32_t m_minDataLen;
 	uint32_t m_maxDataLen;
+	uint32_t m_minStreamingWidthLen;
+	uint32_t m_maxStreamingWidthLen;
 	uint32_t m_maxByteEnablesLen;
 	uint8_t *m_data;
 	uint8_t *m_byte_enables;
 	uint32_t m_numTransfers;
 	bool m_last_write;
+	bool m_initMemory;
 
 	unsigned int m_seed;
 
@@ -180,6 +211,16 @@ private:
 		bool has_be;
 		bool has_sw;
 
+		if (m_initMemory) {
+			address = m_minAddress;
+			len = m_maxAddress-m_minAddress;
+			sw_len = len;
+			be_len = 0;
+
+			hasAddrLen = true;
+			return;
+		}
+
 		address = (m_minAddress +
 					(rand_r(&m_seed) % (m_maxAddress-m_minAddress)));
 		address &= m_addressMask;
@@ -187,17 +228,27 @@ private:
 		// Need to cap length to stay within address-bounds.
 		max_len = MIN(max_len, m_maxAddress - address);
 
-		len = rand_r(&m_seed) % max_len;
-		len = (len > m_minDataLen) ? len : m_minDataLen;
+		len = rand_r(&m_seed) % (max_len + 1);
+		len = (len > m_minDataLen) ? len : MIN(m_minDataLen, max_len);
 		hasAddrLen = true;
 
-		has_be = rand_r(&m_seed) & 1;
-		max_be_len = MIN(m_maxByteEnablesLen, len);
-		be_len = has_be ? rand_r(&m_seed) % max_be_len : 0;
+		be_len = 0;
+		if (m_maxByteEnablesLen) {
+			has_be = rand_r(&m_seed) & 1;
+			max_be_len = MIN(m_maxByteEnablesLen, len);
+			be_len = has_be ? rand_r(&m_seed) % (max_be_len + 1): 0;
+		}
 
 		// If has_sw turns out to be true, create a streaming-width smaller than length
 		has_sw = rand_r(&m_seed) & 1;
 		sw_len = has_sw ? rand_r(&m_seed) % len : len;
+		if (sw_len < m_minStreamingWidthLen) {
+			sw_len = m_minStreamingWidthLen;
+		}
+		if (sw_len > m_maxStreamingWidthLen) {
+			sw_len = m_maxStreamingWidthLen;
+		}
+
 		// sw_len zero is not allowed.
 		sw_len = sw_len ? sw_len : len;
 	}

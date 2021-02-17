@@ -142,6 +142,17 @@ public:
 	{
 		sc_bv<FLIT_WIDTH> tmp;
 
+		CreateFlit(tmp);
+
+		flit.write(tmp);
+
+		m_flitDone = true;
+	}
+
+	void CreateFlit(sc_bv<FLIT_WIDTH>& flit)
+	{
+		sc_bv<FLIT_WIDTH> tmp;
+
 		if (m_chiattr) {
 			assert(m_pos == 0);
 
@@ -187,9 +198,7 @@ public:
 			}
 		}
 
-		flit.write(tmp);
-
-		m_flitDone = true;
+		flit = tmp;
 	}
 
 	bool Done() { return m_flitDone; }
@@ -213,7 +222,7 @@ private:
 	{
 		unsigned int firstbit = m_pos;
 		unsigned int lastbit = firstbit + width - 1;
-		T mask = (1 << width) - 1;
+		T mask = (static_cast<T>(1) << width) - 1;
 
 		flit.range(lastbit, firstbit) = val & mask;
 
@@ -463,6 +472,17 @@ public:
 	{
 		sc_bv<FLIT_WIDTH> tmp;
 
+		CreateFlit(tmp);
+
+		flit.write(tmp);
+
+		m_flitDone = true;
+	}
+
+	void CreateFlit(sc_bv<FLIT_WIDTH>& flit)
+	{
+		sc_bv<FLIT_WIDTH> tmp;
+
 		if (m_chiattr) {
 			assert(m_pos == 0);
 
@@ -482,9 +502,7 @@ public:
 			Set(tmp, m_chiattr->GetTraceTag(), TraceTag_Width);
 		}
 
-		flit.write(tmp);
-
-		m_flitDone = true;
+		flit = tmp;
 	}
 
 	bool Done() { return m_flitDone; }
@@ -508,7 +526,7 @@ private:
 	{
 		unsigned int firstbit = m_pos;
 		unsigned int lastbit = firstbit + width - 1;
-		T mask = (1 << width) - 1;
+		T mask = (static_cast<T>(1) << width) - 1;
 
 		flit.range(lastbit, firstbit) = val & mask;
 
@@ -604,7 +622,6 @@ public:
 	//
 	enum {
 		QoS_Width 	= Snp::QoS_Width,
-		TgtID_Width 	= NODEID_WIDTH,
 		SrcID_Width 	= NODEID_WIDTH,
 		TxnID_Width 	= Snp::TxnID_Width,
 		FwdNID_Width 	= NODEID_WIDTH,
@@ -621,7 +638,6 @@ public:
 		// Sum of above
 		FLIT_WIDTH =
 			QoS_Width +
-			TgtID_Width +
 			SrcID_Width +
 			TxnID_Width +
 			FwdNID_Width +
@@ -673,6 +689,17 @@ public:
 	{
 		sc_bv<FLIT_WIDTH> tmp;
 
+		CreateFlit(tmp);
+
+		flit.write(tmp);
+
+		m_flitDone = true;
+	}
+
+	void CreateFlit(sc_bv<FLIT_WIDTH>& flit)
+	{
+		sc_bv<FLIT_WIDTH> tmp;
+
 		if (m_chiattr) {
 			assert(m_pos == 0);
 
@@ -692,9 +719,7 @@ public:
 			Set(tmp, m_chiattr->GetTraceTag(), TraceTag_Width);
 		}
 
-		flit.write(tmp);
-
-		m_flitDone = true;
+		flit = tmp;
 	}
 
 	bool Done() { return m_flitDone; }
@@ -718,7 +743,7 @@ private:
 	{
 		unsigned int firstbit = m_pos;
 		unsigned int lastbit = firstbit + width - 1;
-		T mask = (1 << width) - 1;
+		T mask = (static_cast<T>(1) << width) - 1;
 
 		flit.range(lastbit, firstbit) = val & mask;
 
@@ -736,7 +761,7 @@ private:
 	{
 		unsigned int firstbit = m_pos;
 		unsigned int lastbit = firstbit + width - 1;
-		uint64_t mask = (1 << width) - 1;
+		uint64_t mask = (static_cast<T>(1) << width) - 1;
 		uint64_t val;
 
 		val = flit.range(lastbit, firstbit).to_uint64();
@@ -807,7 +832,8 @@ template<
 	int NODEID_WIDTH,
 	int RSVDC_WIDTH,
 	int DATACHECK_WIDTH,
-	int POISON_WIDTH>
+	int POISON_WIDTH,
+	int DAT_OPCODE_WIDTH>
 class DatPkt
 {
 public:
@@ -817,7 +843,7 @@ public:
 		SrcID_Width 	= NODEID_WIDTH,
 		TxnID_Width 	= Dat::TxnID_Width,
 		HomeNID_Width 	= NODEID_WIDTH,
-		Opcode_Width 	= Dat::Opcode_Width,
+		Opcode_Width 	= DAT_OPCODE_WIDTH,
 		RespErr_Width 	= Dat::RespErr_Width,
 		Resp_Width 	= Dat::Resp_Width,
 
@@ -902,6 +928,24 @@ public:
 	{
 		sc_bv<FLIT_WIDTH> tmp;
 
+		CreateFlit(tmp);
+
+		flit.write(tmp);
+
+		m_sent += Data_Width / 8;
+
+		if (m_sent >= m_gp->get_data_length()) {
+			//
+			// All transmitted
+			//
+			m_flitDone = true;
+		}
+	}
+
+	void CreateFlit(sc_bv<FLIT_WIDTH>& flit)
+	{
+		sc_bv<FLIT_WIDTH> tmp;
+
 		if (m_chiattr) {
 			uint8_t dataID = m_sent / (Data_Width/8);
 
@@ -940,16 +984,7 @@ public:
 			}
 		}
 
-		flit.write(tmp);
-
-		m_sent += Data_Width / 8;
-
-		if (m_sent >= m_gp->get_data_length()) {
-			//
-			// All transmitted
-			//
-			m_flitDone = true;
-		}
+		flit = tmp;
 	}
 
 	bool Done()
@@ -976,7 +1011,7 @@ private:
 	{
 		unsigned int firstbit = m_pos;
 		unsigned int lastbit = firstbit + width - 1;
-		T mask = (1 << width) - 1;
+		T mask = (static_cast<T>(1) << width) - 1;
 
 		flit.range(lastbit, firstbit) = val & mask;
 
