@@ -43,10 +43,23 @@ CXXFLAGS += -Wall -Wno-strict-overflow
 # Verilator
 VERILATOR ?=verilator
 
-VERILATOR_ROOT=$(shell $(VERILATOR) --getenv VERILATOR_ROOT 2>/dev/null || echo -n /usr/share/verilator)
+VERILATOR_ROOT?=$(shell $(VERILATOR) --getenv VERILATOR_ROOT 2>/dev/null || echo -n /usr/share/verilator)
 VOBJ_DIR ?=obj_dir
 VENV=SYSTEMC_INCLUDE=$(SYSTEMC_INCLUDE) SYSTEMC_LIBDIR=$(SYSTEMC_LIBDIR)
 VERILATED_O=$(VOBJ_DIR)/verilated.o
+
+# VM_TRACE enables internal signals tracing with verilator
+# if the SystemC application supports it.
+VM_TRACE?=0
+# VM_COVERAGE enables coverage analysis if the SystemC application
+# supports it.
+#
+# See man verilator for more information.
+VM_COVERAGE?=0
+
+VFLAGS += --MMD
+
+verilated_%.o: $(VERILATOR_ROOT)/include/verilated_%.cpp
 
 #
 # This Rule describes howto run a verilog top module through verilator
@@ -54,6 +67,6 @@ VERILATED_O=$(VOBJ_DIR)/verilated.o
 # for SystemC to use.
 #
 $(VOBJ_DIR)/V%__ALL.a $(VOBJ_DIR)/V%.h: %.v
-	$(VENV) $(VERILATOR) $(VFLAGS) -sc --top-module $(^:.v=) $^
+	$(VENV) $(VERILATOR) $(VFLAGS) -sc $^
 	$(MAKE) -C $(VOBJ_DIR) -f V$(<:.v=.mk) OPT="$(CXXFLAGS)"
 	$(MAKE) -C $(VOBJ_DIR) -f V$(<:.v=.mk) OPT="$(CXXFLAGS)" verilated.o
