@@ -25,7 +25,6 @@
 #ifndef REMOTE_PORT_TLM
 #define REMOTE_PORT_TLM
 
-#include "utils/async_event.h"
 
 extern "C" {
 #include "remote-port-proto.h"
@@ -186,7 +185,6 @@ private:
 
 	sc_process_handle adaptor_proc;
 
-	async_event rp_pkt_event;
 	pthread_t rp_pkt_thread;
 	pthread_mutex_t rp_pkt_mutex;
 

@@ -43,7 +43,6 @@ extern "C" {
 #include "remote-port-sk.h"
 };
 
-#include "utils/async_event.h"
 #include "remote-port-tlm.h"
 #include "remote-port-tlm-wires.h"
 #include "remote-port-tlm-memory-master.h"
@@ -145,7 +144,6 @@ protected:
 	tlm_utils::tlm_quantumkeeper m_qk;
 private:
 	sc_time time_start;
-	async_event event;
 	pthread_t thread;
 };
 
@@ -276,8 +274,7 @@ remoteport_tlm::remoteport_tlm(sc_module_name name,
 			bool blocking_socket)
 	: sc_module(name),
 	  rst("rst"),
-	  blocking_socket(blocking_socket),
-	  rp_pkt_event("rp-pkt-ev")
+	  blocking_socket(blocking_socket)
 {
 	this->fd = fd;
 	this->sk_descr = sk_descr;
@@ -319,7 +316,6 @@ void remoteport_tlm::rp_pkt_main(void)
 			exit(EXIT_FAILURE);
 		}
 
-		rp_pkt_event.notify(SC_ZERO_TIME);
 		pthread_mutex_unlock(&rp_pkt_mutex);
 	}
 }
@@ -524,9 +520,6 @@ bool remoteport_tlm::rp_process(bool can_sync)
 		unsigned char *data;
 		uint32_t dlen;
 		size_t datalen;
-
-		if (!blocking_socket)
-			wait(rp_pkt_event);
 
 		pthread_mutex_lock(&rp_pkt_mutex);
 		r = rp_read(&pkt_rx.pkt->hdr, sizeof pkt_rx.pkt->hdr);

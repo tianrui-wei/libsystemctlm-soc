@@ -168,7 +168,7 @@ public:
 
 	xilinx_zynqmp(sc_core::sc_module_name name, const char *sk_descr,
 			Iremoteport_tlm_sync *sync = NULL,
-			bool blocking_socket = true);
+			bool blocking_socket = false);
 	~xilinx_zynqmp(void);
 	void tie_off(void);
 };
